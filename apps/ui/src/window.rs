@@ -657,6 +657,9 @@ pub fn run(show_event: Option<windows_sys::Win32::Foundation::HANDLE>) -> Result
         if std::env::var_os("GDPI3_LIGHT").is_some() {
             app.global::<Theme>().set_dark(false);
         }
+        if std::env::var_os("GDPI3_OPEN_SELECT").is_some() {
+            app.global::<AppState>().set_debug_open_select(true);
+        }
     }
 
     // Sure metni (yalnizca bagliyken) ve sayaclar (yalnizca ana sayfa gorunurken).

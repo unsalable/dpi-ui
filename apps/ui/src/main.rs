@@ -25,10 +25,16 @@ fn main() {
     if args.iter().any(|a| a.eq_ignore_ascii_case("--tray")) {
         std::process::exit(tray::run());
     }
-    let Some(show_event) = winsys::single_instance("Local\\GoodbyeDPI3.Window") else {
-        return; // var olan pencere one getirildi
+    // Test modunda kullanicinin acik penceresiyle cakismadan ayri ornek acilir.
+    let show_event = if std::env::var_os("GDPI3_TEST").is_some() {
+        None
+    } else {
+        let Some(ev) = winsys::single_instance("Local\\GoodbyeDPI3.Window") else {
+            return; // var olan pencere one getirildi
+        };
+        Some(ev)
     };
-    if let Err(e) = window::run(Some(show_event)) {
+    if let Err(e) = window::run(show_event) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};
         let text = winsys::wide(&format!("Pencere açılamadı: {e}"));
         let title = winsys::wide("GoodbyeDPI UI 3");

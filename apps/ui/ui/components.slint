@@ -152,10 +152,26 @@ export component Select inherits Rectangle {
         }
     }
 
+    /// Yalnizca ekran goruntusu testleri icin: acilista listeyi ac.
+    in property <bool> open-on-start: false;
+    Timer {
+        interval: 400ms;
+        running: root.open-on-start;
+        triggered => {
+            self.running = false;
+            popup.show();
+        }
+    }
+
+    // Satir 34 px + 2 px aralik, ust/alt 4 px dolgu. Acik boyut verilmezse liste
+    // icerigi tasar ama zemin (ve golge) sifir yukseklikte kalir.
+    property <length> sheet-height: root.options.length * 36px + 6px;
+
     popup := PopupWindow {
         x: 0;
         y: root.height + 4px;
         width: root.width;
+        height: root.sheet-height;
         close-policy: close-on-click-outside;
 
         sheet := Rectangle {
@@ -163,6 +179,9 @@ export component Select inherits Rectangle {
             init => {
                 self.shown = true;
             }
+            x: 0;
+            width: parent.width;
+            height: parent.height;
             y: self.shown ? 0 : -6px;
             animate y { duration: Motion.snap; easing: cubic-bezier(0.22, 1, 0.36, 1); }
             background: Theme.surface;
