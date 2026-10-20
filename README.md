@@ -90,6 +90,4 @@ Paket yakalama: [WinDivert](https://github.com/basil00/WinDivert) (LGPL-3.0). DP
 teknikleri [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) ve
 [zapret](https://github.com/bol-van/zapret) projelerinin yayımladığı yöntemlere dayanır.
 
-Arayüz [Slint](https://slint.dev) ile yapılmıştır:
 
-[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
