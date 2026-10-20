@@ -1,0 +1,385 @@
+import { Theme, Metrics, Motion } from "tokens.slint";
+import { Icons } from "icons.slint";
+
+export component Icon inherits Path {
+    in property <color> tint: Theme.text;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    width: 18px;
+    height: 18px;
+    stroke: tint;
+    stroke-width: 1.8px;
+    fill: transparent;
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool> danger-hover: false;
+    callback clicked();
+
+    width: 34px;
+    height: 30px;
+    border-radius: 8px;
+    background: ta.has-hover ? (danger-hover ? Theme.danger.with-alpha(0.18) : Theme.surface-2) : Theme.surface-2.with-alpha(0);
+    animate background { duration: Motion.fast; }
+
+    Icon {
+        commands: root.icon;
+        width: 16px;
+        height: 16px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        tint: ta.has-hover ? Theme.text : Theme.text-muted;
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: checked ? Theme.accent : Theme.surface-2;
+    border-width: 1px;
+    border-color: checked ? Theme.accent : Theme.stroke;
+    animate background, border-color { duration: Motion.snap; }
+
+    knob := Rectangle {
+        width: ta.pressed ? 20px : 16px;
+        height: 16px;
+        y: 3px;
+        x: root.checked ? root.width - self.width - 3px : 3px;
+        border-radius: 8px;
+        background: root.checked ? Theme.on-accent : Theme.text-muted;
+        animate x, width { duration: Motion.base; easing: cubic-bezier(0.34, 1.56, 0.64, 1); }
+        animate background { duration: Motion.snap; }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    callback edited(string);
+
+    height: Metrics.control-height;
+    border-radius: Metrics.radius-sm + 2px;
+    background: Theme.surface-2;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.stroke;
+    animate border-color { duration: Motion.fast; }
+
+    Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.text-muted;
+        vertical-alignment: center;
+        overflow: elide;
+        visible: root.text == "";
+    }
+
+    input := TextInput {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text <=> root.text;
+        color: Theme.text;
+        vertical-alignment: center;
+        single-line: true;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        selection-foreground-color: Theme.text;
+        edited => {
+            root.edited(self.text);
+        }
+    }
+}
+
+export component Select inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> current-index: 0;
+    callback selected(int);
+
+    height: Metrics.control-height;
+    border-radius: Metrics.radius-sm + 2px;
+    background: Theme.surface-2;
+    border-width: 1px;
+    border-color: ta.has-hover ? Theme.accent.with-alpha(0.6) : Theme.stroke;
+    animate border-color { duration: Motion.fast; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 8px;
+        Text {
+            text: root.options[root.current-index];
+            color: Theme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                commands: Icons.chevron-down;
+                width: 14px;
+                height: 14px;
+                tint: Theme.text-muted;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            popup.show();
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+        close-policy: close-on-click-outside;
+
+        sheet := Rectangle {
+            property <bool> shown: false;
+            init => {
+                self.shown = true;
+            }
+            y: self.shown ? 0 : -6px;
+            animate y { duration: Motion.snap; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+            background: Theme.surface;
+            border-radius: Metrics.radius;
+            border-width: 1px;
+            border-color: Theme.stroke;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 6px;
+            drop-shadow-color: #00000066;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 2px;
+                for option[index] in root.options: Rectangle {
+                    height: 34px;
+                    border-radius: Metrics.radius-sm;
+                    background: item-ta.has-hover ? Theme.surface-2 : Theme.surface-2.with-alpha(0);
+                    animate background { duration: Motion.fast; }
+
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 8px;
+                        Text {
+                            text: option;
+                            color: index == root.current-index ? Theme.accent : Theme.text;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                commands: Icons.check;
+                                width: 14px;
+                                height: 14px;
+                                tint: index == root.current-index ? Theme.accent : Theme.accent.with-alpha(0);
+                            }
+                        }
+                    }
+
+                    item-ta := TouchArea {
+                        clicked => {
+                            root.current-index = index;
+                            root.selected(index);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> current-index: 0;
+    callback selected(int);
+
+    property <length> cell: (self.width - 8px) / max(1, options.length);
+
+    height: Metrics.control-height;
+    border-radius: Metrics.radius-sm + 2px;
+    background: Theme.surface-2;
+    border-width: 1px;
+    border-color: Theme.stroke;
+
+    Rectangle {
+        x: 4px + root.current-index * root.cell;
+        y: 4px;
+        width: root.cell;
+        height: root.height - 8px;
+        border-radius: Metrics.radius-sm;
+        background: Theme.surface;
+        border-width: 1px;
+        border-color: Theme.stroke;
+        animate x { duration: Motion.base; easing: cubic-bezier(0.34, 1.3, 0.64, 1); }
+    }
+
+    for option[index] in root.options: Rectangle {
+        x: 4px + index * root.cell;
+        y: 4px;
+        width: root.cell;
+        height: root.height - 8px;
+        Text {
+            text: option;
+            color: index == root.current-index ? Theme.text : Theme.text-muted;
+            font-weight: index == root.current-index ? 600 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            animate color { duration: Motion.snap; }
+        }
+
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.current-index = index;
+                root.selected(index);
+            }
+        }
+    }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> icon;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 20px;
+    background: ta.has-hover ? Theme.surface-2 : Theme.surface;
+    border-width: 1px;
+    border-color: Theme.stroke;
+    animate background { duration: Motion.fast; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 16px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                commands: root.icon;
+                width: 16px;
+                height: 16px;
+                tint: Theme.accent-2;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                font-size: 10px;
+                color: Theme.text-muted;
+            }
+
+            Text {
+                text: root.value;
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    min-height: 52px;
+    HorizontalLayout {
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Theme.text-muted;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked <=> root.checked;
+                toggled(value) => {
+                    root.toggled(value);
+                }
+            }
+        }
+    }
+}
+
+export component Card inherits Rectangle {
+    in property <string> heading;
+    background: Theme.surface;
+    border-radius: Metrics.radius-lg;
+    border-width: 1px;
+    border-color: Theme.stroke;
+
+    VerticalLayout {
+        alignment: start;
+        padding: 16px;
+        padding-top: 14px;
+        spacing: 4px;
+        Text {
+            text: root.heading;
+            color: Theme.text-muted;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.6px;
+        }
+
+        @children
+    }
+}

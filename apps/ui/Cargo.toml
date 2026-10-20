@@ -1,0 +1,28 @@
+[package]
+name = "goodbyedpi3-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "GoodbyeDPI3"
+path = "src/main.rs"
+
+[dependencies]
+# Yalnizca winit + yazilim render: GPU yigini (OpenGL/Skia) hic yuklenmez.
+slint = { version = "1.18.1", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-software",
+    "unstable-winit-030",
+] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_Controls",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+slint-build = "1.18.1"

@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["apps/ui", "crates/windivert"]
+
+[workspace.package]
+version = "3.0.0-alpha.1"
+edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://github.com/unsalable/goodbyedpi-ui-3"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+# Motor paket basina catch_unwind ile korunuyor; unwind kalmali.
+panic = "unwind"

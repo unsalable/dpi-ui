@@ -1,0 +1,34 @@
+// Tasarim belirtecleri: tum renkler, olculer ve hareket sureleri yalnizca buradan gelir.
+// Palet: "Nane gecesi".
+
+export global Theme {
+    in-out property <bool> dark: true;
+
+    out property <color> bg: dark ? #0B0E13 : #F5F7FA;
+    out property <color> surface: dark ? #121620 : #FFFFFF;
+    out property <color> surface-2: dark ? #1A1F2B : #EEF1F5;
+    out property <color> stroke: dark ? #252B38 : #DDE2EA;
+    out property <color> text: dark ? #ECF1F7 : #0C1220;
+    out property <color> text-muted: dark ? #8B95A7 : #5A6578;
+    out property <color> accent: dark ? #2CF0A8 : #00A874;
+    out property <color> accent-2: dark ? #19C3F0 : #0096C7;
+    out property <color> on-accent: #06110C;
+    out property <color> danger: dark ? #FF5D6C : #D93445;
+    out property <color> warn: dark ? #FFB648 : #B7791F;
+    out property <brush> accent-gradient: @linear-gradient(135deg, accent 0%, accent-2 100%);
+}
+
+export global Metrics {
+    out property <length> radius-sm: 6px;
+    out property <length> radius: 10px;
+    out property <length> radius-lg: 16px;
+    out property <length> control-height: 36px;
+    out property <length> titlebar-height: 44px;
+}
+
+export global Motion {
+    out property <duration> fast: 120ms;
+    out property <duration> snap: 180ms;
+    out property <duration> base: 240ms;
+    out property <duration> slow: 420ms;
+}
