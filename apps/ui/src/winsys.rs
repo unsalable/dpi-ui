@@ -10,7 +10,8 @@ use windows_sys::Win32::System::Registry::{
     RegGetValueW, RegOpenKeyExW, RegSetValueExW,
 };
 use windows_sys::Win32::System::Services::{CloseServiceHandle, OpenSCManagerW, OpenServiceW, SC_MANAGER_CONNECT, SERVICE_START, StartServiceW};
-use windows_sys::Win32::System::Threading::{CreateEventW, CreateMutexW, OpenEventW, SetEvent, EVENT_MODIFY_STATE};
+use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::System::Threading::{CreateEventW, CreateMutexW, OpenEventW, ResetEvent, SetEvent, EVENT_MODIFY_STATE};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, HICON, ICONINFO, SW_SHOWNORMAL};
 
@@ -32,12 +33,62 @@ pub fn system_prefers_light() -> bool {
     rc == 0 && value == 1
 }
 
+/// Gorev cubugu ve sistem ogeleri acik temada mi? (Okunamazsa koyu varsayilir.)
+pub fn system_uses_light_taskbar() -> bool {
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("SystemUsesLightTheme");
+    let mut value: u32 = 0;
+    let mut size = 4u32;
+    let rc = unsafe {
+        RegGetValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), &mut value as *mut _ as *mut c_void, &mut size)
+    };
+    rc == 0 && value == 1
+}
+
 /// Windows'ta "Animasyon efektleri" acik mi?
 pub fn animations_enabled() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETCLIENTAREAANIMATION, SystemParametersInfoW};
     let mut on: i32 = 1;
     unsafe { SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &mut on as *mut _ as *mut c_void, 0) };
     on != 0
+}
+
+/// Ad alanina ek: testler (`GDPI3_TEST` ya da `GDPI3_INSTANCE`) kullanicinin acik
+/// uygulamasiyla cakismasin diye ayri adlar kullanir.
+pub fn instance_name(base: &str) -> String {
+    let suffix = std::env::var("GDPI3_INSTANCE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var_os("GDPI3_TEST").map(|_| ".test".to_owned()))
+        .unwrap_or_default();
+    format!("{base}{suffix}")
+}
+
+const QUIT_EVENT: &str = "Local\\GoodbyeDPI3.Quit";
+
+/// Pencere ve tepsi sureclerinin ortak "cik" olayi (elle sifirlanan: tetiklenince bekleyen
+/// tum surecler uyanir). Acilista sifirlanir; onceki bir cikistan kalmis olabilir.
+pub fn quit_event() -> HANDLE {
+    let n = wide(&instance_name(QUIT_EVENT));
+    unsafe {
+        let h = CreateEventW(std::ptr::null(), 1, 0, n.as_ptr());
+        if !h.is_null() {
+            ResetEvent(h);
+        }
+        h
+    }
+}
+
+/// Acik pencereyi ve tepsiyi kapatir (tepsideki "Cik", `--quit`).
+pub fn signal_quit() {
+    let n = wide(&instance_name(QUIT_EVENT));
+    unsafe {
+        let h = OpenEventW(EVENT_MODIFY_STATE, 0, n.as_ptr());
+        if !h.is_null() {
+            SetEvent(h);
+            CloseHandle(h);
+        }
+    }
 }
 
 /// Adli olay ile tek ornek: ilk ornekse olayi (bekleme icin) dondurur; degilse
@@ -165,5 +216,31 @@ pub fn set_window_icons(hwnd: HWND) {
         let big = make_icon(GetSystemMetrics(SM_CXICON).max(32) as u32, Mark::App);
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small as isize);
         SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, big as isize);
+    }
+}
+
+/// Pencereyi katmanli yapip saydamligini ayarlar (kapanirken solma icin).
+pub fn set_window_alpha(hwnd: HWND, alpha: u8) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, SetWindowLongPtrW, WS_EX_LAYERED,
+    };
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if ex & WS_EX_LAYERED as isize == 0 {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED as isize);
+        }
+        SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+    }
+}
+
+/// Sistem cercevesini temaya uydurur: koyu modda koyu golge ve ince koyu kenar cizgisi.
+pub fn set_window_theme(hwnd: HWND, dark: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{DWMWA_BORDER_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+    let dark_mode: i32 = dark as i32;
+    // COLORREF = 0x00BBGGRR: koyu #3A3A3C, acik #D1D1D6.
+    let border: u32 = if dark { 0x003C_3A3A } else { 0x00D6_D1D1 };
+    unsafe {
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE as u32, &dark_mode as *const _ as *const c_void, 4);
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, &border as *const _ as *const c_void, 4);
     }
 }

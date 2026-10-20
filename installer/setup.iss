@@ -62,8 +62,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#SourceDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\WinDivert.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\WinDivert64.sys"; DestDir: "{app}"; Flags: ignoreversion
+; WinDivert: surum karsilastirilir (ayni surum yeniden yazilmaz). Surucu cekirdekte yuklu kaldigi
+; icin dosya kilitli olabilir; o durumda hata yerine yeniden baslatmada degistirilir.
+Source: "{#SourceDir}\WinDivert.dll"; DestDir: "{app}"; Flags: restartreplace uninsrestartdelete
+Source: "{#SourceDir}\WinDivert64.sys"; DestDir: "{app}"; Flags: restartreplace uninsrestartdelete
 Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs
 
 [Icons]
@@ -81,6 +83,8 @@ Filename: "{sys}\net.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden 
 Filename: "{app}\{#AppExe}"; Description: "{cm:Launch}"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
+; Once duzgun kapat (tepsi simgesi temizlenir), kalan olursa zorla kapat.
+Filename: "{app}\{#AppExe}"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitUi"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden waituntilterminated; RunOnceId: "KillUi"
 Filename: "{app}\{#ServiceExe}"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveService"
 
@@ -108,6 +112,13 @@ begin
   Result := '';
   // Guncelleme: dosyalar kilitli olmasin diye once hizmet ve arayuz kapatilir.
   Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  // Once duzgun kapat (tepsi simgesi temizlenir). Beklenmez: --quit bilmeyen eski bir surum
+  // normal acilirsa kurulum takilmasin; kalan her sey asagida zorla kapatilir.
+  if FileExists(ExpandConstant('{app}\{#AppExe}')) then
+  begin
+    Exec(ExpandConstant('{app}\{#AppExe}'), '--quit', '', SW_HIDE, ewNoWait, Code);
+    Sleep(500);
+  end;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, Code);
 
   Uninst := V1UninstallString();
@@ -119,4 +130,10 @@ begin
       Exec(RemoveQuotes(Uninst), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, Code);
     end;
   end;
+
+  // WinDivert surucusu son tutamac kapandiktan sonra da cekirdekte yuklu kalir ve
+  // WinDivert64.sys dosyasini kilitler. Baska bir arac kullanmiyorsa burada durur;
+  // kullaniyorsa durmaz, dosya o zaman ayni surumse atlanir, degilse yeniden baslatmada degisir.
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop WinDivert', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Sleep(300);
 end;

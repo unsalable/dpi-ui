@@ -3,13 +3,17 @@
 //! GoodbyeDPI UI 3 arayuzu.
 //!   GoodbyeDPI3.exe          pencere (tek ornek; ikinci acilis var olani one getirir)
 //!   GoodbyeDPI3.exe --tray   yalnizca tepsi simgesi (Slint yuklenmez)
+//!   GoodbyeDPI3.exe --quit   acik pencereyi ve tepsiyi kapatir
 
 mod client;
 mod iconart;
 mod prefs;
 mod tray;
+mod traymenu;
 mod window;
 mod winsys;
+#[cfg(test)]
+mod uitest;
 
 slint::include_modules!();
 
@@ -25,14 +29,14 @@ fn main() {
     if args.iter().any(|a| a.eq_ignore_ascii_case("--tray")) {
         std::process::exit(tray::run());
     }
-    // Test modunda kullanicinin acik penceresiyle cakismadan ayri ornek acilir.
-    let show_event = if std::env::var_os("GDPI3_TEST").is_some() {
-        None
-    } else {
-        let Some(ev) = winsys::single_instance("Local\\GoodbyeDPI3.Window") else {
-            return; // var olan pencere one getirildi
-        };
-        Some(ev)
+    // Acik pencereyi ve tepsiyi kapatir (kaldirma, guncelleme ve testler icin).
+    if args.iter().any(|a| a.eq_ignore_ascii_case("--quit")) {
+        winsys::signal_quit();
+        return;
+    }
+    // Test modunda adlar ayridir; kullanicinin acik penceresiyle cakismaz.
+    let Some(show_event) = winsys::single_instance(&winsys::instance_name("Local\\GoodbyeDPI3.Window")) else {
+        return; // var olan pencere one getirildi
     };
     if let Err(e) = window::run(show_event) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};

@@ -4,7 +4,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use engine::presets;
 use shared::config::{AppConfig, CustomDns, CustomDnsKind, DnsMode};
@@ -15,7 +15,12 @@ use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use crate::client::{Client, Incoming};
 use crate::prefs::{self, Prefs};
 use crate::winsys;
-use crate::{AppState, AppWindow, BenchItem, CategoryItem, Choice, HostItem, PowerState, Theme};
+use crate::{AppState, AppWindow, BenchItem, CategoryItem, Choice, HostItem, Motion, PowerState, Theme};
+
+/// Dokununca tarama animasyonu en az bu kadar gorunur (sonuc daha once gelse bile).
+const MIN_BUSY: Duration = Duration::from_millis(750);
+/// Baglanma istegine bu sure icinde hic yanit gelmezse gercek durum gosterilir.
+const MAX_PENDING: Duration = Duration::from_secs(6);
 
 struct Ctx {
     app: slint::Weak<AppWindow>,
@@ -29,7 +34,11 @@ struct Ctx {
     toast_serial: Cell<i32>,
     method_ids: RefCell<Vec<String>>,
     dns_ids: RefCell<Vec<String>>,
-    home_visible: Cell<bool>,
+    /// Kullanici "baglan" dedi; sonuc gelene (ve en az MIN_BUSY gecene) kadar tarama gosterilir.
+    pending_connect: Cell<Option<Instant>>,
+    /// Kapanma basladi (solma suruyor).
+    closing: Cell<bool>,
+    fade: RefCell<Option<Rc<Timer>>>,
     /// GDPI3_TEST: gercek oturum acilisi kaydina, tepsiye ve v1 gocune dokunma.
     test_mode: bool,
 }
@@ -64,6 +73,26 @@ fn post_toast(message: String, error: bool) {
 }
 
 impl Ctx {
+    fn new(app: &AppWindow, prefs: Prefs, test_mode: bool) -> Self {
+        Ctx {
+            app: app.as_weak(),
+            client: RefCell::new(None),
+            config: RefCell::new(None),
+            engine: RefCell::new(EngineStatus::default()),
+            conflicts: RefCell::new(Vec::new()),
+            learned: RefCell::new(Vec::new()),
+            connected: Cell::new(false),
+            prefs: RefCell::new(prefs),
+            toast_serial: Cell::new(0),
+            method_ids: RefCell::new(Vec::new()),
+            dns_ids: RefCell::new(Vec::new()),
+            pending_connect: Cell::new(None),
+            closing: Cell::new(false),
+            fade: RefCell::new(None),
+            test_mode,
+        }
+    }
+
     fn ui(&self) -> Option<AppWindow> {
         self.app.upgrade()
     }
@@ -152,13 +181,12 @@ impl Ctx {
         if !self.connected.get() {
             st.set_power(PowerState::Off);
             st.set_status_title(s("Motor hizmeti kapalı"));
-            st.set_status_sub(s("Başlatmak için küreye dokun"));
+            st.set_status_sub(s("Başlatmak için dokun"));
             st.set_banner(s(""));
-            st.set_stats_line(s(""));
             return;
         }
-        let (power, title, sub) = match e.state {
-            EngineState::Off => (PowerState::Off, "Kapalı".to_owned(), "Açmak için küreye dokun".to_owned()),
+        let (mut power, mut title, mut sub) = match e.state {
+            EngineState::Off => (PowerState::Off, "Kapalı".to_owned(), "Bağlanmak için dokun".to_owned()),
             EngineState::Starting => (PowerState::Connecting, "Bağlanıyor…".to_owned(), "Motor başlatılıyor".to_owned()),
             EngineState::On => (PowerState::On, "Korumalı".to_owned(), uptime_text(e.since_ms)),
             EngineState::Paused => (
@@ -172,6 +200,19 @@ impl Ctx {
                 e.message.clone().unwrap_or_else(|| "Bilinmeyen hata".into()),
             ),
         };
+        if let Some(since) = self.pending_connect.get() {
+            let elapsed = since.elapsed();
+            let settled = matches!(e.state, EngineState::On | EngineState::Error | EngineState::Paused);
+            let hold = if settled { elapsed < MIN_BUSY } else { elapsed < MAX_PENDING };
+            if hold {
+                if settled {
+                    Timer::single_shot(MIN_BUSY - elapsed, || with_ctx(|c| c.apply_engine()));
+                }
+                (power, title, sub) = (PowerState::Connecting, "Bağlanıyor…".to_owned(), "Motor başlatılıyor".to_owned());
+            } else {
+                self.pending_connect.set(None);
+            }
+        }
         st.set_power(power);
         st.set_status_title(s(title));
         st.set_status_sub(s(sub));
@@ -189,7 +230,6 @@ impl Ctx {
         };
         st.set_banner(s(banner));
         if e.state != EngineState::On {
-            st.set_stats_line(s(""));
         }
     }
 
@@ -200,7 +240,7 @@ impl Ctx {
         // Saglayicilar.
         let isps: Vec<Choice> = presets::ISPS
             .iter()
-            .map(|i| Choice { id: s(i.id), title: s(i.name), subtitle: s(i.description) })
+            .map(|i| Choice { id: s(i.id), title: s(i.name), subtitle: s(i.description), badge: s("") })
             .collect();
         let isp_index = presets::ISPS.iter().position(|i| i.id.eq_ignore_ascii_case(&cfg.isp)).unwrap_or(0);
         st.set_isp_names(model(isps.iter().map(|c| c.title.clone()).collect()));
@@ -213,17 +253,22 @@ impl Ctx {
         let mut items: Vec<Choice> = Vec::new();
         for (n, id) in isp.methods.iter().enumerate() {
             if let Some(m) = presets::method(id) {
-                let tag = if n == 0 { "Önerilen · " } else { "" };
-                items.push(Choice { id: s(m.id), title: s(format!("{tag}{}", m.name)), subtitle: s(m.config().short_summary()) });
+                let badge = if n == 0 { "Önerilen" } else { "" };
+                items.push(Choice { id: s(m.id), title: s(m.name), subtitle: s(m.config().short_summary()), badge: s(badge) });
                 ids.push(m.id.into());
             }
         }
         for m in presets::ALL.iter().filter(|m| !isp.methods.contains(&m.id)) {
-            items.push(Choice { id: s(m.id), title: s(m.name), subtitle: s(m.config().short_summary()) });
+            items.push(Choice { id: s(m.id), title: s(m.name), subtitle: s(m.config().short_summary()), badge: s("") });
             ids.push(m.id.into());
         }
         for c in &cfg.custom_methods {
-            items.push(Choice { id: s(c.id.as_str()), title: s(format!("Özel · {}", c.name)), subtitle: s(c.config.short_summary()) });
+            items.push(Choice {
+                id: s(c.id.as_str()),
+                title: s(format!("Özel · {}", c.name)),
+                subtitle: s(c.config.short_summary()),
+                badge: s(""),
+            });
             ids.push(c.id.clone());
         }
         let method_index = ids.iter().position(|i| i.eq_ignore_ascii_case(&cfg.method)).unwrap_or(0);
@@ -253,14 +298,19 @@ impl Ctx {
                     }
                     _ => format!("{} · {}", p.description, if p.doh_url.starts_with("tls://") { "DoT" } else { "DoH" }),
                 };
-                providers.push(Choice { id: s(p.id), title: s(p.name), subtitle: s(detail) });
+                providers.push(Choice { id: s(p.id), title: s(p.name), subtitle: s(detail), badge: s("") });
                 dns_ids.push(p.id.to_owned());
             }
         }
         for c in &cfg.dns.custom {
             let fits = matches!((cfg.dns.mode, c.kind), (DnsMode::Encrypted, CustomDnsKind::Doh) | (DnsMode::Redirect, CustomDnsKind::Udp));
             if fits {
-                providers.push(Choice { id: s(c.id.as_str()), title: s(format!("Özel · {}", c.name)), subtitle: s(custom_dns_address(c)) });
+                providers.push(Choice {
+                    id: s(c.id.as_str()),
+                    title: s(format!("Özel · {}", c.name)),
+                    subtitle: s(custom_dns_address(c)),
+                    badge: s(""),
+                });
                 dns_ids.push(c.id.clone());
             }
         }
@@ -328,6 +378,9 @@ impl Ctx {
             _ => !winsys::system_prefers_light(),
         };
         app.global::<Theme>().set_dark(dark);
+        if let Some(hwnd) = hwnd_of(&app) {
+            winsys::set_window_theme(hwnd, dark);
+        }
     }
 
     // ------------------------------------------------------------ ilk calistirma
@@ -371,12 +424,69 @@ impl Ctx {
     fn power_toggle(&self) {
         let Some(client) = self.client() else { return };
         let state = self.engine.borrow().state;
-        let request = if matches!(state, EngineState::On | EngineState::Starting) { Request::Disconnect } else { Request::Connect };
-        client.request(request, |r| {
+        // Tarama surerken ikinci dokunus vazgecmektir.
+        let was_pending = self.pending_connect.take().is_some();
+        let connect = !was_pending && !matches!(state, EngineState::On | EngineState::Starting);
+        if connect {
+            // Simge hemen taramaya gecer; sonuc gelince (en erken MIN_BUSY sonra) yerine oturur.
+            self.pending_connect.set(Some(Instant::now()));
+            Timer::single_shot(MAX_PENDING, || with_ctx(|c| c.apply_engine()));
+        }
+        self.apply_engine();
+        client.request(if connect { Request::Connect } else { Request::Disconnect }, |r| {
             if let Response::Error { message } = r {
-                post_toast(message, true);
+                let _ = slint::invoke_from_event_loop(move || {
+                    with_ctx(|c| {
+                        c.pending_connect.set(None);
+                        c.apply_engine();
+                        c.toast(&message, true);
+                    })
+                });
             }
         });
+    }
+
+    /// Kapat dugmesi ve Alt+F4: tercihe gore bildirim alaninda kalir ya da her seyi kapatir.
+    fn close_window(&self) {
+        if self.closing.get() {
+            return;
+        }
+        if self.prefs.borrow().close_to_tray {
+            if !self.test_mode {
+                spawn_tray();
+            }
+        } else {
+            winsys::signal_quit();
+        }
+        self.fade_out_and_quit();
+    }
+
+    /// Pencere yaklasik 120 ms'de solar, sonra surec biter.
+    fn fade_out_and_quit(&self) {
+        if self.closing.replace(true) {
+            return;
+        }
+        let hwnd = self.ui().and_then(|app| hwnd_of(&app));
+        let (Some(hwnd), true) = (hwnd, winsys::animations_enabled()) else {
+            let _ = slint::quit_event_loop();
+            return;
+        };
+        let hwnd = hwnd as usize;
+        let alpha = Cell::new(255i32);
+        let timer = Rc::new(Timer::default());
+        let keep = Rc::downgrade(&timer);
+        timer.start(TimerMode::Repeated, Duration::from_millis(15), move || {
+            let a = (alpha.get() - 34).max(0);
+            alpha.set(a);
+            winsys::set_window_alpha(hwnd as _, a as u8);
+            if a == 0 {
+                if let Some(t) = keep.upgrade() {
+                    t.stop();
+                }
+                let _ = slint::quit_event_loop();
+            }
+        });
+        *self.fade.borrow_mut() = Some(timer);
     }
 
     fn add_custom_dns(&self, name: &str, address: &str, bootstrap: &str) -> String {
@@ -465,33 +575,6 @@ impl Ctx {
         });
     }
 
-    fn poll_stats(&self) {
-        if !self.home_visible.get() || self.engine.borrow().state != EngineState::On {
-            return;
-        }
-        let Some(client) = self.client() else { return };
-        client.request(Request::GetStats, |r| {
-            if let Response::Stats { stats } = r {
-                let _ = slint::invoke_from_event_loop(move || {
-                    with_ctx(|c| {
-                        let Some(app) = c.ui() else { return };
-                        let line = if stats.bypassed == 0 && stats.dns_queries == 0 {
-                            String::new()
-                        } else if stats.dns_queries > 0 {
-                            format!("{} bağlantı atlatıldı · {} şifreli DNS sorgusu", count(stats.bypassed), count(stats.dns_queries))
-                        } else {
-                            format!("{} bağlantı atlatıldı", count(stats.bypassed))
-                        };
-                        app.global::<AppState>().set_stats_line(s(line));
-                    })
-                });
-            }
-        });
-    }
-}
-
-fn count(n: u64) -> String {
-    if n >= 10_000 { format!("{:.1}B", n as f64 / 1000.0).replace('.', ",") } else { n.to_string() }
 }
 
 fn uptime_text(since: Option<u64>) -> String {
@@ -585,24 +668,11 @@ fn parse_custom_dns(name: &str, address: &str, bootstrap: &str) -> Result<Custom
 
 // ================================================================ pencere
 
-pub fn run(show_event: Option<windows_sys::Win32::Foundation::HANDLE>) -> Result<(), slint::PlatformError> {
+pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
-    let ctx = Rc::new(Ctx {
-        app: app.as_weak(),
-        client: RefCell::new(None),
-        config: RefCell::new(None),
-        engine: RefCell::new(EngineStatus::default()),
-        conflicts: RefCell::new(Vec::new()),
-        learned: RefCell::new(Vec::new()),
-        connected: Cell::new(false),
-        prefs: RefCell::new(prefs::load()),
-        toast_serial: Cell::new(0),
-        method_ids: RefCell::new(Vec::new()),
-        dns_ids: RefCell::new(Vec::new()),
-        home_visible: Cell::new(true),
-        test_mode: std::env::var_os("GDPI3_TEST").is_some(),
-    });
+    let ctx = Rc::new(Ctx::new(&app, prefs::load(), std::env::var_os("GDPI3_TEST").is_some()));
     CTX.with(|c| *c.borrow_mut() = Some(ctx.clone()));
+    app.global::<Motion>().set_enabled(winsys::animations_enabled());
     ctx.apply_prefs();
     ctx.apply_engine();
     app.global::<AppState>().set_version(s(shared::VERSION));
@@ -615,15 +685,25 @@ pub fn run(show_event: Option<windows_sys::Win32::Foundation::HANDLE>) -> Result
     });
     *ctx.client.borrow_mut() = Some(client);
 
-    // Ikinci kez acilinca var olan pencere one gelir.
-    if let Some(ev) = show_event {
-        let ev = ev as usize;
-        std::thread::Builder::new()
-            .name("tek-ornek".into())
-            .stack_size(64 * 1024)
-            .spawn(move || loop {
-                use windows_sys::Win32::System::Threading::{INFINITE, WaitForSingleObject};
-                unsafe { WaitForSingleObject(ev as _, INFINITE) };
+    // Ikinci kez acilinca var olan pencere one gelir; tepsiden "Cik" denince pencere de kapanir.
+    let quit = winsys::quit_event() as usize;
+    let show = show_event as usize;
+    std::thread::Builder::new()
+        .name("tek-ornek".into())
+        .stack_size(64 * 1024)
+        .spawn(move || {
+            use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+            use windows_sys::Win32::System::Threading::{INFINITE, WaitForMultipleObjects};
+            let handles = [quit as windows_sys::Win32::Foundation::HANDLE, show as _];
+            loop {
+                let r = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, INFINITE) };
+                if r == WAIT_OBJECT_0 {
+                    let _ = slint::invoke_from_event_loop(|| with_ctx(|c| c.fade_out_and_quit()));
+                    return;
+                }
+                if r != WAIT_OBJECT_0 + 1 {
+                    return;
+                }
                 let _ = slint::invoke_from_event_loop(|| {
                     with_ctx(|c| {
                         if let Some(app) = c.ui() {
@@ -635,9 +715,9 @@ pub fn run(show_event: Option<windows_sys::Win32::Foundation::HANDLE>) -> Result
                         }
                     })
                 });
-            })
-            .ok();
-    }
+            }
+        })
+        .ok();
 
     // Kapatinca tepside kalinacaksa tepsi sureci simdiden acilsin.
     if ctx.prefs.borrow().close_to_tray && !ctx.test_mode {
@@ -652,17 +732,13 @@ pub fn run(show_event: Option<windows_sys::Win32::Foundation::HANDLE>) -> Result
         }) {
             app.set_depth(d);
             app.set_sub(sub);
-            ctx.home_visible.set(d == 0);
         }
         if std::env::var_os("GDPI3_LIGHT").is_some() {
             app.global::<Theme>().set_dark(false);
         }
-        if std::env::var_os("GDPI3_OPEN_SELECT").is_some() {
-            app.global::<AppState>().set_debug_open_select(true);
-        }
     }
 
-    // Sure metni (yalnizca bagliyken) ve sayaclar (yalnizca ana sayfa gorunurken).
+    // Sure metni (yalnizca bagliyken).
     let uptime = Timer::default();
     uptime.start(TimerMode::Repeated, Duration::from_secs(20), || {
         with_ctx(|c| {
@@ -671,12 +747,24 @@ pub fn run(show_event: Option<windows_sys::Win32::Foundation::HANDLE>) -> Result
             }
         })
     });
-    let stats = Timer::default();
-    stats.start(TimerMode::Repeated, Duration::from_secs(3), || with_ctx(|c| c.poll_stats()));
-
     app.show()?;
-    style_window(&app);
+    // Slint winit penceresini olay dongusu baslayinca olusturur; o ana kadar HWND yoktur.
+    // Yuvarlak kose, golge, simge ve koyu cerceve pencere olusur olusmaz uygulanir.
+    let styler = Rc::new(Timer::default());
+    let tries = Cell::new(0);
+    let weak = app.as_weak();
+    let keep = Rc::downgrade(&styler);
+    styler.start(TimerMode::Repeated, Duration::from_millis(10), move || {
+        tries.set(tries.get() + 1);
+        let done = weak.upgrade().is_none_or(|app| style_window(&app));
+        if done || tries.get() > 200 {
+            if let Some(t) = keep.upgrade() {
+                t.stop();
+            }
+        }
+    });
     slint::run_event_loop()?;
+    drop(styler);
     CTX.with(|c| *c.borrow_mut() = None);
     Ok(())
 }
@@ -688,7 +776,7 @@ fn spawn_tray() {
 }
 
 fn bind_callbacks(app: &AppWindow) {
-    app.on_drag_window({
+    app.global::<AppState>().on_drag_window({
         let weak = app.as_weak();
         move || {
             if let Some(app) = weak.upgrade() {
@@ -706,15 +794,11 @@ fn bind_callbacks(app: &AppWindow) {
             }
         }
     });
-    app.on_close_window(|| {
-        with_ctx(|c| {
-            if c.prefs.borrow().close_to_tray && !c.test_mode {
-                spawn_tray();
-            }
-        });
-        let _ = slint::quit_event_loop();
+    app.on_close_window(|| with_ctx(|c| c.close_window()));
+    app.window().on_close_requested(|| {
+        with_ctx(|c| c.close_window());
+        slint::CloseRequestResponse::KeepWindowShown
     });
-    app.on_page_changed(|depth, _| with_ctx(|c| c.home_visible.set(depth == 0)));
 
     let st = app.global::<AppState>();
     st.on_power_toggle(|| with_ctx(|c| c.power_toggle()));
@@ -884,18 +968,16 @@ fn bind_callbacks(app: &AppWindow) {
     });
 }
 
-/// Win11'de cercevesiz pencereye yuvarlak kose, DWM golgesi ve simge verir.
-fn style_window(app: &AppWindow) {
+/// Win11'de cercevesiz pencereye yuvarlak kose, DWM golgesi ve simge verir. Pencere henuz
+/// olusmadiysa false doner.
+fn style_window(app: &AppWindow) -> bool {
     use windows_sys::Win32::Graphics::Dwm::{
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
     };
     use windows_sys::Win32::UI::Controls::MARGINS;
-    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-    app.window().with_winit_window(|w| {
-        let Ok(handle) = w.window_handle() else { return };
-        let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
-        let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+    let Some(hwnd) = hwnd_of(app) else { return false };
+    {
         unsafe {
             let corner = DWMWCP_ROUND;
             DwmSetWindowAttribute(
@@ -908,7 +990,35 @@ fn style_window(app: &AppWindow) {
             DwmExtendFrameIntoClientArea(hwnd, &margins);
         }
         winsys::set_window_icons(hwnd);
-    });
+        winsys::set_window_theme(hwnd, app.global::<Theme>().get_dark());
+    }
+    true
+}
+
+fn hwnd_of(app: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    app.window()
+        .with_winit_window(|w| match w.window_handle().map(|h| h.as_raw()) {
+            Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get() as windows_sys::Win32::Foundation::HWND),
+            _ => None,
+        })
+        .flatten()
+}
+
+/// Arayuz testleri: ekrani gercek ayarlarla (hazir saglayici/yontem/DNS listeleri) doldurur.
+#[cfg(test)]
+pub(crate) fn populate_for_test(app: &AppWindow, engine: EngineStatus, learned: Vec<LearnedHost>) {
+    let ctx = Ctx::new(app, Prefs::default(), true);
+    ctx.connected.set(true);
+    *ctx.engine.borrow_mut() = engine;
+    *ctx.learned.borrow_mut() = learned;
+    let mut cfg = AppConfig::default().sanitized();
+    cfg.scope.targets = vec!["ornek-site.com".into()];
+    cfg.scope.excluded = vec!["banka.com.tr".into()];
+    ctx.apply_config(cfg);
+    ctx.apply_learned();
+    ctx.apply_engine();
+    app.global::<AppState>().set_version(s(shared::VERSION));
 }
 
 #[cfg(test)]
@@ -927,6 +1037,32 @@ mod tests {
         assert_eq!(d.kind, CustomDnsKind::Doh);
         assert!(parse_custom_dns("x", "https://dns.nextdns.io/abc", "").unwrap_err().contains("IP"));
         assert!(parse_custom_dns("x", "dns.google", "").is_err());
+    }
+
+    /// Dokununca tarama en az MIN_BUSY gorunur; hic yanit gelmezse MAX_PENDING sonra gercek durum.
+    #[test]
+    fn connecting_is_shown_long_enough() {
+        let h = crate::uitest::Harness::new(1.0);
+        let ctx = Ctx::new(&h.app, Prefs::default(), true);
+        let power = || h.app.global::<AppState>().get_power();
+        ctx.connected.set(true);
+
+        ctx.engine.borrow_mut().state = EngineState::On;
+        ctx.pending_connect.set(Some(Instant::now()));
+        ctx.apply_engine();
+        assert_eq!(power(), PowerState::Connecting, "sonuc hemen geldi ama tarama surmeli");
+        ctx.pending_connect.set(Some(Instant::now() - MIN_BUSY));
+        ctx.apply_engine();
+        assert_eq!(power(), PowerState::On);
+        assert!(ctx.pending_connect.get().is_none());
+
+        ctx.engine.borrow_mut().state = EngineState::Off;
+        ctx.pending_connect.set(Some(Instant::now() - Duration::from_secs(2)));
+        ctx.apply_engine();
+        assert_eq!(power(), PowerState::Connecting, "motor henuz yanit vermedi");
+        ctx.pending_connect.set(Some(Instant::now() - MAX_PENDING));
+        ctx.apply_engine();
+        assert_eq!(power(), PowerState::Off, "yanit gelmezse gercek durum gosterilmeli");
     }
 
     #[test]

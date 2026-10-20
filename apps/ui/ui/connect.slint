@@ -1,0 +1,223 @@
+// Baglanti simgesi: Face ID'nin kilit acma animasyonundan esinlenir.
+//   kapali     : dort kose parantezi ve ortada dunya (gri)
+//   baglaniyor : dunya kendi ekseninde doner (Face ID'nin tarama ani)
+//   bagli      : parantezler daireye kapanir, dunya kaybolur, onay isareti cizilir (yesil)
+//   hata       : simge kirmizi olur ve "hayir" der gibi saga sola sallanir
+// Butun sekiller 100x100'luk gorunum kutusunda her karede yeniden hesaplanir; animasyonlar
+// yalnizca durum degisince calisir, boslukta hicbir sey cizilmez.
+
+import { Theme, Motion, Curves } from "tokens.slint";
+
+export enum PowerState { off, connecting, on, error }
+
+export component ConnectGlyph {
+    in property <PowerState> state: PowerState.off;
+    in property <string> label;
+    callback clicked();
+
+    width: 208px;
+    height: 208px;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    property <bool> is-on: root.state == PowerState.on;
+    property <bool> is-busy: root.state == PowerState.connecting;
+    property <bool> is-error: root.state == PowerState.error;
+
+    /// 0 = kose parantezleri, 1 = tam daire.
+    property <float> morph: 0;
+    /// Onay isaretinin cizilmis kismi.
+    property <float> check: 0;
+    /// Dunyanin gorunurlugu.
+    property <float> globe: 1;
+    /// Hata sallanmasi (tek seferlik 0 -> 1).
+    property <float> shake: 0;
+    /// Baglaninca disa yayilan halka (tek seferlik 0 -> 1).
+    property <float> ripple: 0;
+    /// Donme evresi: 0..1 arasi 45 derecelik tur. Desen her 45 derecede tekrarlar; donme
+    /// durdugunda tur tamamlanir, simge her zaman ayni (simetrik) pozda durur.
+    property <float> phase: 0;
+
+    states [
+        on when root.is-on: {
+            morph: 1;
+            check: 1;
+            globe: 0;
+            ripple: 1;
+            in {
+                animate globe { duration: 180ms * Motion.scale; easing: ease-in; }
+                animate morph { duration: 560ms * Motion.scale; easing: Curves.out; }
+                animate check { duration: 360ms * Motion.scale; delay: 180ms * Motion.scale; easing: ease-out; }
+                animate ripple { duration: 900ms * Motion.scale; delay: 280ms * Motion.scale; easing: ease-out; }
+            }
+            out {
+                animate check { duration: 160ms * Motion.scale; easing: ease-in; }
+                animate morph { duration: 460ms * Motion.scale; delay: 60ms * Motion.scale; easing: Curves.out; }
+                animate globe { duration: 300ms * Motion.scale; delay: 200ms * Motion.scale; easing: ease-out; }
+            }
+        }
+        error when root.is-error: {
+            shake: 1;
+            in {
+                animate shake { duration: 600ms * Motion.scale; }
+            }
+        }
+    ]
+
+    spin := Timer {
+        interval: 16ms;
+        running: root.is-busy || root.phase > 0;
+        triggered => {
+            if (root.phase + 0.0125 >= 1) {
+                root.phase = root.is-busy ? root.phase + 0.0125 - 1 : 0;
+            } else {
+                root.phase += 0.0125;
+            }
+        }
+    }
+
+    property <color> tint: root.is-on ? Theme.green : root.is-error ? Theme.red : root.is-busy ? Theme.label : Theme.secondary;
+    animate tint { duration: Motion.slow; }
+
+    // Cizim boyutu: uzerine gelince hafifce buyur, basinca kuculur, daireye kapanirken bir
+    // an sisip yerine oturur.
+    property <length> size: (ta.pressed ? 128px : ta.has-hover ? 142px : 136px) * (1 + 0.06 * sin(root.morph * 180deg));
+    animate size { duration: 260ms * Motion.scale; easing: Curves.spring; }
+    property <length> shift: 9px * sin(root.shake * 1080deg) * (1 - root.shake);
+
+    // ---------------------------------------------------------------- geometri
+    property <float> m: clamp(root.morph, 0, 1);
+    property <float> br: 13 + 31 * root.m;
+    property <float> bg: 15 * (1 - root.m);
+    property <string> brackets: "M " + (50 - root.bg) + " 6 L " + (6 + root.br) + " 6 A " + root.br + " " + root.br + " 0 0 0 6 " + (6 + root.br) + " L 6 " + (50 - root.bg)
+        + " M " + (50 + root.bg) + " 6 L " + (94 - root.br) + " 6 A " + root.br + " " + root.br + " 0 0 1 94 " + (6 + root.br) + " L 94 " + (50 - root.bg)
+        + " M 94 " + (50 + root.bg) + " L 94 " + (94 - root.br) + " A " + root.br + " " + root.br + " 0 0 1 " + (94 - root.br) + " 94 L " + (50 + root.bg) + " 94"
+        + " M " + (50 - root.bg) + " 94 L " + (6 + root.br) + " 94 A " + root.br + " " + root.br + " 0 0 1 6 " + (94 - root.br) + " L 6 " + (50 + root.bg);
+
+    property <float> gr: 19 + 6 * root.globe;
+    // Boylam cizgisi: kutuptan kutba yarim elips (iki kubik egri; yazilim cizici eliptik
+    // yaylari guvenilir cizmedigi icin).
+    pure function meridian(phi: float) -> string {
+        return abs(phi) >= 90 ? "" : root.half-ellipse(root.gr * sin(phi * 1deg));
+    }
+    pure function half-ellipse(sx: float) -> string {
+        return " M 50 " + (50 - root.gr) + " C " + (50 + 0.5523 * sx) + " " + (50 - root.gr) + " " + (50 + sx) + " " + (50 - 0.5523 * root.gr) + " " + (50 + sx) + " 50"
+            + " C " + (50 + sx) + " " + (50 + 0.5523 * root.gr) + " " + (50 + 0.5523 * sx) + " " + (50 + root.gr) + " 50 " + (50 + root.gr);
+    }
+    property <string> globe-path: "M 50 " + (50 - root.gr) + " A " + root.gr + " " + root.gr + " 0 1 1 50 " + (50 + root.gr) + " A " + root.gr + " " + root.gr + " 0 1 1 50 " + (50 - root.gr)
+        + " M " + (50 - root.gr) + " 50 L " + (50 + root.gr) + " 50";
+    /// k. boylamin bakis acisi (derece); gorunen yarim kure -90..90.
+    pure function lon(k: int) -> float {
+        return -135 + 45 * k + 45 * root.phase;
+    }
+    /// Kenara yaklasan boylam soner: donus uc boyutlu gorunur, kenarda "atlama" olmaz.
+    pure function lon-alpha(phi: float) -> float {
+        return abs(phi) >= 90 ? 0 : min(1, cos(phi * 1deg) * 1.6);
+    }
+
+    // Onay: (31,51) -> (44,64) -> (69,37); parcalarin uzunlugu 18.38 ve 36.80.
+    property <float> cd: clamp(root.check, 0, 1) * 55.18;
+    property <string> check-path: root.cd <= 18.38
+        ? "M 31 51 L " + (31 + 13 * root.cd / 18.38) + " " + (51 + 13 * root.cd / 18.38)
+        : "M 31 51 L 44 64 L " + (44 + 25 * (root.cd - 18.38) / 36.8) + " " + (64 - 27 * (root.cd - 18.38) / 36.8);
+
+    // ---------------------------------------------------------------- cizim
+    Rectangle {
+        property <length> d: root.size * 0.88 * (1 + 0.32 * root.ripple);
+        width: self.d;
+        height: self.d;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: self.width / 2;
+        border-width: 2px;
+        border-color: Theme.green.with-alpha(root.ripple > 0 && root.ripple < 1 ? 0.45 * (1 - root.ripple) : 0);
+    }
+
+    Path {
+        width: root.size;
+        height: root.size;
+        x: (root.width - self.width) / 2 + root.shift;
+        y: (root.height - self.height) / 2;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.brackets;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 6px;
+        stroke-line-cap: round;
+    }
+
+    if root.globe > 0.01: Path {
+        width: root.size;
+        height: root.size;
+        x: (root.width - self.width) / 2 + root.shift;
+        y: (root.height - self.height) / 2;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.globe-path;
+        fill: transparent;
+        stroke: root.tint.with-alpha(root.globe);
+        stroke-width: 3.8px;
+        stroke-line-cap: round;
+    }
+
+    for k in root.globe > 0.01 ? 5 : 0: Path {
+        width: root.size;
+        height: root.size;
+        x: (root.width - self.width) / 2 + root.shift;
+        y: (root.height - self.height) / 2;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.meridian(root.lon(k));
+        fill: transparent;
+        stroke: root.tint.with-alpha(root.globe * root.lon-alpha(root.lon(k)));
+        stroke-width: 3.8px;
+        stroke-line-cap: round;
+    }
+
+    if root.check > 0.001: Path {
+        width: root.size;
+        height: root.size;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.check-path;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+    }
+
+    // Klavye odagi: yalnizca Tab ile gelindiginde gorunur.
+    Rectangle {
+        width: root.size + 18px;
+        height: self.width;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: self.width / 2;
+        border-width: 2px;
+        border-color: Theme.blue.with-alpha(focus.has-focus ? 0.9 : 0);
+    }
+
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}

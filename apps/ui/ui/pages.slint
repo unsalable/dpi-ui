@@ -1,50 +1,76 @@
-// Ekranlar: ana sayfa, ayarlar menusu ve alt sayfalar.
+// Ekranlar: ana ekran, ayarlar menusu ve alt sayfalar.
 
-import { Theme, Metrics, Motion } from "tokens.slint";
+import { Theme, Type, Metrics, Motion, Curves } from "tokens.slint";
 import { Icons } from "icons.slint";
-import { Orb, PowerState } from "orb.slint";
-import { Icon, Chip, Card, SettingRow, Select, Field, Segmented, Toggle } from "components.slint";
-import { Button, PageHeader, NavRow, ChoiceList, HostEditor, SectionLabel, Hint } from "widgets.slint";
-import { AppState } from "state.slint";
+import { ConnectGlyph, PowerState } from "connect.slint";
+import { Icon, Tile, Segmented, GlyphButton } from "components.slint";
+import { Page, NavBar, Group, NavRow, ToggleRow, CheckRow, PickerRow, ActionRow, FieldRow, ItemRow, EmptyRow } from "widgets.slint";
+import { AppState, HostItem } from "state.slint";
 
-// ================================================================== ana sayfa
+// ================================================================== ana ekran
 
-export component HomePage inherits Rectangle {
+export component HomePage inherits Page {
+    callback open-settings();
     callback open-method();
     callback open-dns();
-    background: Theme.bg;
 
     VerticalLayout {
-        padding: 24px;
-        padding-top: 4px;
-
-        if AppState.banner != "": Rectangle {
-            height: banner-row.preferred-height + 16px;
-            border-radius: Metrics.radius;
-            background: Theme.warn.with-alpha(0.12);
-            border-width: 1px;
-            border-color: Theme.warn.with-alpha(0.4);
-            banner-row := HorizontalLayout {
-                padding: 8px;
-                padding-left: 10px;
-                spacing: 8px;
-                VerticalLayout {
-                    alignment: center;
-                    Icon {
-                        commands: Icons.warn;
-                        width: 16px;
-                        height: 16px;
-                        tint: Theme.warn;
+        // Ust cubuk: solda ayarlar; sagdaki pencere dugmeleri ust katmanda.
+        Rectangle {
+            height: Metrics.navbar;
+            TouchArea {
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        AppState.drag-window();
                     }
                 }
+            }
 
-                Text {
-                    text: AppState.banner;
-                    color: Theme.text;
-                    font-size: 12px;
-                    wrap: word-wrap;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
+            GlyphButton {
+                x: 10px;
+                y: (parent.height - self.height) / 2;
+                icon: Icons.line-gear;
+                icon-size: 19px;
+                weight: 1.5px;
+                label: "Ayarlar";
+                clicked => {
+                    root.open-settings();
+                }
+            }
+        }
+
+        if AppState.banner != "": HorizontalLayout {
+            padding-left: Metrics.margin;
+            padding-right: Metrics.margin;
+            Rectangle {
+                background: Theme.cell;
+                border-radius: Metrics.group-radius;
+                height: banner-row.preferred-height;
+                banner-row := HorizontalLayout {
+                    padding: 12px;
+                    padding-left: 14px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        alignment: center;
+                        Path {
+                            width: 20px;
+                            height: 20px;
+                            viewbox-width: 24;
+                            viewbox-height: 24;
+                            commands: Icons.fill-warning;
+                            fill: Theme.orange;
+                            fill-rule: evenodd;
+                        }
+                    }
+
+                    Text {
+                        text: AppState.banner;
+                        color: Theme.label;
+                        font-size: Type.callout;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
                 }
             }
         }
@@ -55,8 +81,9 @@ export component HomePage inherits Rectangle {
 
         HorizontalLayout {
             alignment: center;
-            Orb {
+            ConnectGlyph {
                 state: AppState.power;
+                label: AppState.status-title;
                 clicked => {
                     if (AppState.service-missing) {
                         AppState.start-service();
@@ -68,53 +95,31 @@ export component HomePage inherits Rectangle {
         }
 
         Rectangle {
-            height: 24px;
+            height: 10px;
         }
 
         Text {
             text: AppState.status-title;
-            color: AppState.power == PowerState.on ? Theme.accent : AppState.power == PowerState.error ? Theme.danger : Theme.text;
-            font-size: 24px;
-            font-weight: 650;
+            color: Theme.label;
+            font-family: Type.display;
+            font-size: Type.title;
+            font-weight: 600;
             horizontal-alignment: center;
-            animate color { duration: Motion.base; }
         }
 
         Rectangle {
-            height: 4px;
-        }
-
-        Text {
-            text: AppState.status-sub;
-            color: Theme.text-muted;
-            font-size: 13px;
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
-
-        Rectangle {
-            height: 28px;
+            height: 6px;
         }
 
         HorizontalLayout {
-            alignment: center;
-            spacing: 8px;
-            Chip {
-                label: "Yöntem";
-                value: AppState.method-name;
-                icon: Icons.bolt;
-                clicked => {
-                    root.open-method();
-                }
-            }
-
-            Chip {
-                label: "DNS";
-                value: AppState.dns-name;
-                icon: Icons.globe;
-                clicked => {
-                    root.open-dns();
-                }
+            padding-left: 40px;
+            padding-right: 40px;
+            Text {
+                text: AppState.status-sub;
+                color: Theme.secondary;
+                font-size: Type.body;
+                horizontal-alignment: center;
+                wrap: word-wrap;
             }
         }
 
@@ -122,112 +127,171 @@ export component HomePage inherits Rectangle {
             vertical-stretch: 1;
         }
 
-        Text {
-            text: AppState.stats-line;
-            color: Theme.text-muted;
-            font-size: 11px;
-            horizontal-alignment: center;
+        HorizontalLayout {
+            padding-left: Metrics.margin;
+            padding-right: Metrics.margin;
+            padding-bottom: 20px;
+            Group {
+                NavRow {
+                    first: true;
+                    icon: Icons.fill-bolt;
+                    tint: Theme.orange;
+                    title: "Yöntem";
+                    value: AppState.method-name;
+                    clicked => {
+                        root.open-method();
+                    }
+                }
+
+                NavRow {
+                    last: true;
+                    icon: Icons.line-globe;
+                    filled: false;
+                    tint: Theme.blue;
+                    title: "DNS";
+                    value: AppState.dns-name;
+                    clicked => {
+                        root.open-dns();
+                    }
+                }
+            }
         }
     }
 }
 
 // ================================================================== ayarlar menusu
 
-export component SettingsMenu inherits Rectangle {
+export component SettingsMenu inherits Page {
     callback back();
     callback open(int);
-    background: Theme.bg;
 
     VerticalLayout {
-        PageHeader {
-            title: "Ayarlar";
+        NavBar {
+            back-text: "";
             back => {
                 root.back();
             }
         }
 
         VerticalLayout {
-            padding: 12px;
-            padding-top: 0;
-            spacing: 2px;
+            padding-left: Metrics.margin;
+            padding-right: Metrics.margin;
+            spacing: 24px;
             alignment: start;
-            NavRow {
-                icon: Icons.bolt;
-                title: "Bağlantı yöntemi";
-                value: AppState.method-name;
-                clicked => {
-                    root.open(1);
+
+            HorizontalLayout {
+                padding-left: 4px;
+                Text {
+                    text: "Ayarlar";
+                    color: Theme.label;
+                    font-family: Type.display;
+                    font-size: Type.large-title;
+                    font-weight: 700;
                 }
             }
 
-            NavRow {
-                icon: Icons.globe;
-                title: "DNS";
-                value: AppState.dns-name;
-                clicked => {
-                    root.open(2);
+            Group {
+                NavRow {
+                    first: true;
+                    icon: Icons.fill-bolt;
+                    tint: Theme.orange;
+                    title: "Bağlantı yöntemi";
+                    value: AppState.method-name;
+                    clicked => {
+                        root.open(1);
+                    }
+                }
+
+                NavRow {
+                    icon: Icons.line-globe;
+                    filled: false;
+                    tint: Theme.blue;
+                    title: "DNS";
+                    value: AppState.dns-name;
+                    clicked => {
+                        root.open(2);
+                    }
+                }
+
+                NavRow {
+                    last: true;
+                    icon: Icons.line-list;
+                    filled: false;
+                    tint: Theme.teal;
+                    title: "Siteler";
+                    value: AppState.scope-mode == 0 ? "Akıllı liste" : "Tüm trafik";
+                    clicked => {
+                        root.open(3);
+                    }
                 }
             }
 
-            NavRow {
-                icon: Icons.list;
-                title: "Siteler";
-                value: AppState.scope-mode == 0 ? "Akıllı liste" : "Tüm trafik";
-                clicked => {
-                    root.open(3);
+            Group {
+                NavRow {
+                    first: true;
+                    icon: Icons.fill-gear;
+                    tint: Theme.gray;
+                    title: "Genel";
+                    value: AppState.start-with-windows ? "Windows ile başlar" : "Elle başlar";
+                    clicked => {
+                        root.open(4);
+                    }
+                }
+
+                NavRow {
+                    last: true;
+                    icon: Icons.fill-appearance;
+                    tint: Theme.indigo;
+                    title: "Görünüm";
+                    value: AppState.theme-index == 0 ? "Sistem" : AppState.theme-index == 1 ? "Koyu" : "Açık";
+                    clicked => {
+                        root.open(5);
+                    }
                 }
             }
 
-            NavRow {
-                icon: Icons.gear;
-                title: "Genel";
-                value: AppState.start-with-windows ? "Windows ile başlar" : "Elle başlatılır";
-                clicked => {
-                    root.open(4);
-                }
-            }
-
-            NavRow {
-                icon: Icons.palette;
-                title: "Görünüm";
-                value: AppState.theme-index == 0 ? "Sistem teması" : AppState.theme-index == 1 ? "Koyu" : "Açık";
-                clicked => {
-                    root.open(5);
-                }
-            }
-
-            NavRow {
-                icon: Icons.info;
-                title: "Hakkında";
-                value: "Sürüm " + AppState.version;
-                clicked => {
-                    root.open(6);
+            Group {
+                NavRow {
+                    first: true;
+                    last: true;
+                    icon: Icons.fill-info;
+                    tint: Theme.gray;
+                    title: "Hakkında";
+                    value: AppState.version;
+                    clicked => {
+                        root.open(6);
+                    }
                 }
             }
         }
     }
 }
 
-// Alt sayfa iskeleti: baslik + kaydirilabilir icerik.
-component SubPage inherits Rectangle {
+// Alt sayfa iskeleti: gezinme cubugu + kaydirilabilir icerik.
+component SubPage inherits Page {
     in property <string> title;
+    in property <string> back-text: "Ayarlar";
     callback back();
-    background: Theme.bg;
 
     VerticalLayout {
-        PageHeader {
+        NavBar {
             title: root.title;
+            back-text: root.back-text;
             back => {
                 root.back();
             }
         }
 
+        // Icerik tercih ettigi yukseklikte kalir (aksi halde satirlar en kucuk boylarina sikisir).
         Flickable {
-            VerticalLayout {
+            content-height: max(self.height, content.preferred-height);
+            content := VerticalLayout {
                 alignment: start;
-                padding: 16px;
-                padding-top: 0;
-                spacing: 12px;
+                padding-left: Metrics.margin;
+                padding-right: Metrics.margin;
+                padding-top: 6px;
+                padding-bottom: 28px;
+                spacing: 26px;
                 @children
             }
         }
@@ -239,104 +303,33 @@ component SubPage inherits Rectangle {
 export component MethodPage inherits SubPage {
     title: "Bağlantı yöntemi";
 
-    Card {
-        heading: "İNTERNET SAĞLAYICI";
-        VerticalLayout {
-            padding-top: 6px;
-            spacing: 6px;
-            Select {
-                options: AppState.isp-names;
-                current-index: AppState.isp-index;
-                open-on-start: AppState.debug-open-select;
-                selected(index) => {
-                    AppState.select-isp(index);
-                }
-            }
-
-            Hint {
-                text: AppState.isps[AppState.isp-index].subtitle;
+    Group {
+        footer: AppState.isps[AppState.isp-index].subtitle;
+        PickerRow {
+            first: true;
+            last: true;
+            title: "İnternet sağlayıcı";
+            options: AppState.isp-names;
+            current-index: AppState.isp-index;
+            selected(index) => {
+                AppState.select-isp(index);
             }
         }
     }
 
-    Card {
-        heading: "YÖNTEM";
-        VerticalLayout {
-            padding-top: 6px;
-            ChoiceList {
-                options: AppState.methods;
-                current-index: AppState.method-index;
-                selected(index) => {
-                    AppState.select-method(index);
-                }
-            }
-        }
-    }
-
-    Hint {
-        text: "Seçili sağlayıcı için önerilen yöntem listenin başındadır. Bir site açılmazsa sıradakini dene; değişiklik hemen uygulanır.";
-    }
-}
-
-// Ozel DNS ekleme formu: ad, adres ve (sifreli adresler icin) sunucu IP'si.
-component CustomDnsForm inherits VerticalLayout {
-    property <string> error;
-    padding-top: 6px;
-    spacing: 8px;
-
-    Hint {
-        text: "IP (1.2.3.4 ya da 1.2.3.4:5353) ya da şifreli adres (https://… / tls://…) gir. Şifreli adreslerde sunucunun IP'si de gerekir.";
-    }
-
-    name := Field {
-        placeholder: "Ad (örn. Ev DNS)";
-        edited => {
-            root.error = "";
-        }
-    }
-
-    address := Field {
-        placeholder: "Adres";
-        edited => {
-            root.error = "";
-        }
-    }
-
-    bootstrap := Field {
-        placeholder: "Sunucu IP'si (yalnızca https/tls için)";
-        edited => {
-            root.error = "";
-        }
-    }
-
-    if root.error != "": Text {
-        text: root.error;
-        color: Theme.danger;
-        font-size: 11px;
-        wrap: word-wrap;
-    }
-
-    HorizontalLayout {
-        alignment: start;
-        Button {
-            text: "Ekle ve kullan";
+    Group {
+        header: "YÖNTEM";
+        footer: "Sağlayıcın için önerilen yöntem en üsttedir. Bir site açılmazsa sıradakini dene; değişiklik hemen uygulanır.";
+        for option[index] in AppState.methods: CheckRow {
+            first: index == 0;
+            last: index == AppState.methods.length - 1;
+            title: option.title;
+            subtitle: option.subtitle;
+            badge: option.badge;
+            selected: index == AppState.method-index;
             clicked => {
-                root.error = AppState.add-custom-dns(name.text, address.text, bootstrap.text);
-                if (root.error == "") {
-                    name.text = "";
-                    address.text = "";
-                    bootstrap.text = "";
-                }
+                AppState.select-method(index);
             }
-        }
-    }
-
-    HostEditor {
-        items: AppState.custom-dns;
-        can-add: false;
-        empty-text: "Özel sunucu yok.";
-        remove(id) => {
-            AppState.remove-custom-dns(id);
         }
     }
 }
@@ -345,112 +338,125 @@ component CustomDnsForm inherits VerticalLayout {
 
 export component DnsPage inherits SubPage {
     title: "DNS";
+    property <string> custom-error;
+    property <string> custom-name;
+    property <string> custom-address;
+    property <string> custom-bootstrap;
 
-    Card {
-        heading: "MOD";
-        VerticalLayout {
-            padding-top: 6px;
-            spacing: 6px;
-            Segmented {
-                options: ["Kapalı", "Şifreli", "Yönlendirme"];
-                current-index: AppState.dns-mode;
-                selected(index) => {
-                    AppState.set-dns-mode(index);
-                }
+    VerticalLayout {
+        spacing: 7px;
+        Segmented {
+            options: ["Kapalı", "Şifreli", "Yönlendirme"];
+            current-index: AppState.dns-mode;
+            selected(index) => {
+                AppState.set-dns-mode(index);
             }
+        }
 
-            Hint {
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            Text {
                 text: AppState.dns-mode == 0
                     ? "Sistemin DNS ayarlarına dokunulmaz."
                     : AppState.dns-mode == 1
                     ? "Sorgular şifreli (DoH/DoT) gider; sağlayıcın göremez ve yönlendiremez. Ağ ayarların değişmez."
                     : "Sorgular seçilen sunucunun standart dışı portuna yönlendirilir (eski yöntem).";
+                color: Theme.secondary;
+                font-size: Type.footnote;
+                wrap: word-wrap;
             }
         }
     }
 
-    if AppState.dns-mode != 0: Card {
-        heading: "SUNUCU";
-        VerticalLayout {
-            padding-top: 6px;
-            ChoiceList {
-                options: AppState.dns-providers;
-                current-index: AppState.dns-index;
-                selected(index) => {
-                    AppState.select-dns(index);
-                }
+    if AppState.dns-mode != 0: Group {
+        header: "SUNUCU";
+        for option[index] in AppState.dns-providers: CheckRow {
+            first: index == 0;
+            last: index == AppState.dns-providers.length - 1;
+            title: option.title;
+            subtitle: option.subtitle;
+            selected: index == AppState.dns-index;
+            clicked => {
+                AppState.select-dns(index);
             }
         }
     }
 
-    if AppState.dns-mode == 1: Card {
-        heading: "EN HIZLI DNS";
-        VerticalLayout {
-            padding-top: 6px;
-            spacing: 8px;
-            Hint {
-                text: "Her sağlayıcıya şifreli sorgular gönderip bu hattaki hızını ölçer.";
+    if AppState.dns-mode == 1: Group {
+        header: "HIZ TESTİ";
+        footer: "Her sağlayıcıya şifreli sorgular gönderip bu hattaki yanıt süresini ölçer.";
+        ActionRow {
+            first: true;
+            last: AppState.bench.length == 0;
+            text: AppState.bench-running ? "Ölçülüyor…" : AppState.bench.length == 0 ? "Hızları ölç" : "Yeniden ölç";
+            busy: AppState.bench-running;
+            activated => {
+                AppState.run-bench();
             }
+        }
 
+        for item[i] in AppState.bench: Rectangle {
+            min-height: Metrics.row;
             HorizontalLayout {
-                alignment: start;
-                Button {
-                    text: AppState.bench-running ? "Ölçülüyor…" : "Hızları ölç";
-                    primary: true;
-                    busy: AppState.bench-running;
-                    clicked => {
-                        AppState.run-bench();
-                    }
+                padding-left: 16px;
+                padding-right: 8px;
+                spacing: 10px;
+                Text {
+                    text: item.name;
+                    color: Theme.label;
+                    font-size: Type.callout;
+                    width: 92px;
+                    vertical-alignment: center;
+                    overflow: elide;
                 }
-            }
 
-            for item[i] in AppState.bench: Rectangle {
-                height: 40px;
-                HorizontalLayout {
-                    spacing: 10px;
-                    Text {
-                        text: item.name;
-                        color: Theme.text;
-                        font-size: 12px;
-                        width: 96px;
-                        vertical-alignment: center;
-                        overflow: elide;
-                    }
-
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
                     Rectangle {
-                        horizontal-stretch: 1;
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                height: 8px;
-                                border-radius: 4px;
-                                background: Theme.surface-2;
-                                Rectangle {
-                                    x: 0;
-                                    width: parent.width * (item.ok ? max(0.06, item.ratio) : 1.0);
-                                    height: parent.height;
-                                    border-radius: 4px;
-                                    background: item.ok ? (i == 0 ? Theme.accent : Theme.accent-2.with-alpha(0.7)) : Theme.danger.with-alpha(0.5);
-                                    animate width { duration: 520ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                                }
-                            }
+                        height: 6px;
+                        border-radius: 3px;
+                        background: Theme.fill;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * (item.ok ? max(0.06, item.ratio) : 1.0);
+                            height: parent.height;
+                            border-radius: 3px;
+                            background: !item.ok ? Theme.red.with-alpha(0.5) : i == 0 ? Theme.green : Theme.blue;
+                            animate width { duration: 520ms * Motion.scale; easing: Curves.out; }
                         }
                     }
+                }
 
-                    Text {
-                        text: item.note;
-                        color: item.ok ? Theme.text-muted : Theme.danger;
-                        font-size: 11px;
-                        width: 54px;
-                        horizontal-alignment: right;
-                        vertical-alignment: center;
-                    }
+                Text {
+                    text: item.note;
+                    color: item.ok ? Theme.secondary : Theme.red;
+                    font-size: Type.footnote;
+                    width: 50px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
 
-                    VerticalLayout {
-                        alignment: center;
-                        Button {
+                VerticalLayout {
+                    alignment: center;
+                    use-btn := Rectangle {
+                        width: use-label.preferred-width + 14px;
+                        height: 28px;
+                        border-radius: 7px;
+                        background: use-ta.has-hover ? Theme.fill.with-alpha(0.6) : transparent;
+                        use-label := Text {
                             text: "Kullan";
-                            height: 28px;
+                            color: item.ok ? Theme.blue : Theme.tertiary;
+                            font-size: Type.callout;
+                            font-weight: 500;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        use-ta := TouchArea {
+                            enabled: item.ok;
+                            mouse-cursor: pointer;
                             clicked => {
                                 AppState.use-bench(item.id);
                             }
@@ -458,17 +464,77 @@ export component DnsPage inherits SubPage {
                     }
                 }
             }
+
+            if i < AppState.bench.length - 1: Rectangle {
+                x: 16px;
+                y: parent.height - 1phx;
+                width: parent.width - 16px;
+                height: 1phx;
+                background: Theme.separator;
+            }
         }
     }
 
-    if AppState.dns-mode != 0: Card {
-        heading: "ÖZEL DNS";
-        CustomDnsForm { }
+    if AppState.dns-mode != 0: Group {
+        header: "ÖZEL SUNUCU EKLE";
+        footer: root.custom-error != "" ? root.custom-error : "IP (1.2.3.4 ya da 1.2.3.4:5353) ya da şifreli adres (https://… / tls://…) gir. Şifreli adreslerde sunucunun IP'si de gerekir.";
+        footer-error: root.custom-error != "";
+        FieldRow {
+            first: true;
+            placeholder: "Ad (örn. Ev DNS)";
+            text <=> root.custom-name;
+            edited => {
+                root.custom-error = "";
+            }
+        }
+
+        FieldRow {
+            placeholder: "Adres";
+            text <=> root.custom-address;
+            edited => {
+                root.custom-error = "";
+            }
+        }
+
+        FieldRow {
+            placeholder: "Sunucu IP'si (yalnızca https / tls için)";
+            text <=> root.custom-bootstrap;
+            edited => {
+                root.custom-error = "";
+            }
+        }
+
+        ActionRow {
+            last: true;
+            text: "Ekle ve kullan";
+            activated => {
+                root.custom-error = AppState.add-custom-dns(root.custom-name, root.custom-address, root.custom-bootstrap);
+                if (root.custom-error == "") {
+                    root.custom-name = "";
+                    root.custom-address = "";
+                    root.custom-bootstrap = "";
+                }
+            }
+        }
     }
 
-    if AppState.dns-mode == 1: Card {
-        heading: "GÜVENLİK AĞI";
-        SettingRow {
+    if AppState.dns-mode != 0 && AppState.custom-dns.length > 0: Group {
+        header: "ÖZEL SUNUCULAR";
+        for item[i] in AppState.custom-dns: ItemRow {
+            first: i == 0;
+            last: i == AppState.custom-dns.length - 1;
+            name: item.name;
+            note: item.note;
+            remove => {
+                AppState.remove-custom-dns(item.key);
+            }
+        }
+    }
+
+    if AppState.dns-mode == 1: Group {
+        header: "GÜVENLİK";
+        ToggleRow {
+            first: true;
             title: "Ulaşılamazsa sistem DNS'ine dön";
             subtitle: "Şifreli DNS geçici olarak erişilemezse internet kesilmez.";
             checked: AppState.dns-fallback;
@@ -477,7 +543,8 @@ export component DnsPage inherits SubPage {
             }
         }
 
-        SettingRow {
+        ToggleRow {
+            last: true;
             title: "VPN bağlıyken DNS'e dokunma";
             subtitle: "Kurum içi adlar ve VPN'in kendi DNS'i bozulmaz.";
             checked: AppState.dns-skip-vpn;
@@ -490,35 +557,78 @@ export component DnsPage inherits SubPage {
 
 // ================================================================== siteler
 
-export component SitesPage inherits SubPage {
-    title: "Siteler";
+// Alan adi listesi: ekleme satiri + silinebilir ogeler.
+component HostGroup inherits Group {
+    in property <string> placeholder;
+    in property <[HostItem]> items;
+    in property <string> hint;
+    callback add(string) -> string;
+    callback remove(string);
+    property <string> error;
+    property <string> draft;
+    footer: root.error != "" ? root.error : root.hint;
+    footer-error: root.error != "";
 
-    Card {
-        heading: "KAPSAM";
-        VerticalLayout {
-            padding-top: 6px;
-            spacing: 6px;
-            Segmented {
-                options: ["Akıllı liste", "Tüm trafik"];
-                current-index: AppState.scope-mode;
-                selected(index) => {
-                    AppState.set-scope-mode(index);
-                }
-            }
-
-            Hint {
-                text: AppState.scope-mode == 0
-                    ? "Yalnızca engelli bilinen sitelere uygulanır; diğer siteler, bankalar ve oyunlar hiç etkilenmez. En kararlı seçenek."
-                    : "Her HTTPS bağlantısına uygulanır. Bazı site ve oyunlarda yan etki görülebilir; aşağıdaki istisna listesini kullan.";
+    FieldRow {
+        first: true;
+        last: root.items.length == 0;
+        placeholder: root.placeholder;
+        action: "Ekle";
+        text <=> root.draft;
+        edited => {
+            root.error = "";
+        }
+        accepted(value) => {
+            root.error = root.add(value);
+            if (root.error == "") {
+                root.draft = "";
             }
         }
     }
 
-    if AppState.scope-mode == 0: Card {
-        heading: "OTOMATİK ÖĞRENME";
-        SettingRow {
+    for item[i] in root.items: ItemRow {
+        last: i == root.items.length - 1;
+        name: item.name;
+        note: item.note;
+        remove => {
+            root.remove(item.key);
+        }
+    }
+}
+
+export component SitesPage inherits SubPage {
+    title: "Siteler";
+
+    VerticalLayout {
+        spacing: 7px;
+        Segmented {
+            options: ["Akıllı liste", "Tüm trafik"];
+            current-index: AppState.scope-mode;
+            selected(index) => {
+                AppState.set-scope-mode(index);
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            Text {
+                text: AppState.scope-mode == 0
+                    ? "Yalnızca engelli bilinen sitelere uygulanır; bankalar, oyunlar ve diğer siteler hiç etkilenmez. En kararlı seçenek."
+                    : "Her HTTPS bağlantısına uygulanır. Bazı site ve oyunlarda yan etki görülebilir; aşağıdaki istisna listesini kullan.";
+                color: Theme.secondary;
+                font-size: Type.footnote;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    if AppState.scope-mode == 0: Group {
+        footer: "Bir site DPI yüzünden yanıtsız kalırsa hemen atlatılır ve listeye eklenir.";
+        ToggleRow {
+            first: true;
+            last: true;
             title: "Açılmayan siteleri kendiliğinden ekle";
-            subtitle: "Bir site DPI yüzünden yanıtsız kalırsa hemen atlatılır ve listeye eklenir.";
             checked: AppState.learning;
             toggled(v) => {
                 AppState.set-learning(v);
@@ -526,9 +636,11 @@ export component SitesPage inherits SubPage {
         }
     }
 
-    if AppState.scope-mode == 0: Card {
-        heading: "HAZIR LİSTE";
-        for cat in AppState.categories: SettingRow {
+    if AppState.scope-mode == 0: Group {
+        header: "HAZIR LİSTE";
+        for cat[i] in AppState.categories: ToggleRow {
+            first: i == 0;
+            last: i == AppState.categories.length - 1;
             title: cat.title;
             checked: cat.checked;
             toggled(v) => {
@@ -537,55 +649,56 @@ export component SitesPage inherits SubPage {
         }
     }
 
-    if AppState.scope-mode == 0: Card {
-        heading: "KENDİ SİTELERİM";
-        HostEditor {
-            items: AppState.targets;
-            placeholder: "site.com (alt alanlar dahil)";
-            add(host) => {
-                return AppState.add-target(host);
+    if AppState.scope-mode == 0: HostGroup {
+        header: "KENDİ SİTELERİM";
+        placeholder: "site.com";
+        hint: "Alt alan adları da dahil edilir.";
+        items: AppState.targets;
+        add(host) => {
+            return AppState.add-target(host);
+        }
+        remove(host) => {
+            AppState.remove-target(host);
+        }
+    }
+
+    if AppState.scope-mode == 0: Group {
+        header: "ÖĞRENİLENLER";
+        if AppState.learned.length == 0: EmptyRow {
+            first: true;
+            last: true;
+            text: "Henüz öğrenilen site yok.";
+        }
+
+        for item[i] in AppState.learned: ItemRow {
+            first: i == 0;
+            name: item.name;
+            note: item.note;
+            remove => {
+                AppState.forget-learned(item.key);
             }
-            remove(host) => {
-                AppState.remove-target(host);
+        }
+
+        if AppState.learned.length > 0: ActionRow {
+            last: true;
+            text: "Tümünü unut";
+            destructive: true;
+            activated => {
+                AppState.clear-learned();
             }
         }
     }
 
-    if AppState.scope-mode == 0: Card {
-        heading: "ÖĞRENİLENLER";
-        HostEditor {
-            items: AppState.learned;
-            can-add: false;
-            empty-text: "Henüz öğrenilen site yok.";
-            remove(host) => {
-                AppState.forget-learned(host);
-            }
+    HostGroup {
+        header: "ASLA DOKUNMA";
+        placeholder: "banka.com.tr";
+        hint: "Bu sitelere hiçbir koşulda dokunulmaz.";
+        items: AppState.excluded;
+        add(host) => {
+            return AppState.add-excluded(host);
         }
-
-        if AppState.learned.length > 0: HorizontalLayout {
-            alignment: start;
-            padding-top: 6px;
-            Button {
-                text: "Hepsini temizle";
-                clicked => {
-                    AppState.clear-learned();
-                }
-            }
-        }
-    }
-
-    Card {
-        heading: "ASLA DOKUNMA";
-        HostEditor {
-            items: AppState.excluded;
-            placeholder: "banka.com.tr";
-            empty-text: "İstisna yok.";
-            add(host) => {
-                return AppState.add-excluded(host);
-            }
-            remove(host) => {
-                AppState.remove-excluded(host);
-            }
+        remove(host) => {
+            AppState.remove-excluded(host);
         }
     }
 }
@@ -595,18 +708,19 @@ export component SitesPage inherits SubPage {
 export component GeneralPage inherits SubPage {
     title: "Genel";
 
-    Card {
-        heading: "BAŞLANGIÇ";
-        SettingRow {
+    Group {
+        header: "BAŞLANGIÇ";
+        ToggleRow {
+            first: true;
             title: "Windows açılınca motoru başlat";
-            subtitle: "Oturum açmadan önce bile korur. Arayüz kapalıyken de çalışır.";
+            subtitle: "Oturum açmadan önce bile korur; arayüz kapalıyken de çalışır.";
             checked: AppState.start-with-windows;
             toggled(v) => {
                 AppState.set-start-with-windows(v);
             }
         }
 
-        SettingRow {
+        ToggleRow {
             title: "Açılışta otomatik bağlan";
             checked: AppState.auto-connect;
             toggled(v) => {
@@ -614,9 +728,9 @@ export component GeneralPage inherits SubPage {
             }
         }
 
-        SettingRow {
+        ToggleRow {
+            last: true;
             title: "Oturum açılınca tepside başlat";
-            subtitle: "Tepsi simgesi yaklaşık 2 MB bellek kullanır.";
             checked: AppState.tray-at-login;
             toggled(v) => {
                 AppState.set-tray-at-login(v);
@@ -624,11 +738,15 @@ export component GeneralPage inherits SubPage {
         }
     }
 
-    Card {
-        heading: "PENCERE";
-        SettingRow {
+    Group {
+        header: "PENCERE";
+        footer: AppState.close-to-tray
+            ? "Pencereyi kapatınca uygulama saatin yanındaki tepside kalır. Tamamen çıkmak için tepsi simgesine sağ tıklayıp Çık'ı seç."
+            : "Pencereyi kapatınca uygulama tamamen kapanır. Motor hizmeti ayarlarına göre çalışmaya devam eder.";
+        ToggleRow {
+            first: true;
+            last: true;
             title: "Kapatınca tepside kal";
-            subtitle: "Pencere kapanınca tamamen bellekten çıkar; tepsi simgesi kalır.";
             checked: AppState.close-to-tray;
             toggled(v) => {
                 AppState.set-close-to-tray(v);
@@ -636,23 +754,15 @@ export component GeneralPage inherits SubPage {
         }
     }
 
-    Card {
-        heading: "SORUN GİDERME";
-        VerticalLayout {
-            padding-top: 6px;
-            spacing: 6px;
-            Hint {
-                text: "Motorun son kayıtlarını gösterir. Bir sorun bildirirken işe yarar.";
-            }
-
-            HorizontalLayout {
-                alignment: start;
-                Button {
-                    text: "Günlüğü aç";
-                    clicked => {
-                        AppState.open-logs();
-                    }
-                }
+    Group {
+        header: "SORUN GİDERME";
+        footer: "Motorun son kayıtlarını gösterir; bir sorun bildirirken işe yarar.";
+        ActionRow {
+            first: true;
+            last: true;
+            text: "Günlüğü aç";
+            activated => {
+                AppState.open-logs();
             }
         }
     }
@@ -660,64 +770,241 @@ export component GeneralPage inherits SubPage {
 
 // ================================================================== gorunum
 
-export component AppearancePage inherits SubPage {
-    title: "Görünüm";
+// Tema onizlemesi: kucuk bir ayarlar ekrani cizimi.
+component MiniScreen inherits Rectangle {
+    in property <bool> dark;
+    background: root.dark ? #000000 : #F2F2F7;
+    border-radius: 8px;
+    for row[i] in 3: Rectangle {
+        x: 6px;
+        y: 16px + i * 22px;
+        width: parent.width - 12px;
+        height: 14px;
+        border-radius: 4px;
+        background: root.dark ? #2C2C2E : #FFFFFF;
+    }
+}
 
-    Card {
-        heading: "TEMA";
-        VerticalLayout {
-            padding-top: 6px;
-            Segmented {
-                options: ["Sistem", "Koyu", "Açık"];
-                current-index: AppState.theme-index;
-                selected(index) => {
-                    AppState.select-theme(index);
+component ThemePreview inherits VerticalLayout {
+    in property <string> label;
+    /// 0 = sistem (yari yariya), 1 = koyu, 2 = acik
+    in property <int> kind;
+    in property <bool> selected;
+    callback clicked();
+    spacing: 8px;
+    alignment: start;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checked: root.selected;
+
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 76px;
+            height: 112px;
+            border-radius: 12px;
+            border-width: root.selected ? 2.5px : 1px;
+            border-color: root.selected ? Theme.blue : Theme.separator;
+            animate border-color { duration: Motion.fast; }
+
+            if root.kind != 0: MiniScreen {
+                x: 4px;
+                y: 4px;
+                width: parent.width - 8px;
+                height: parent.height - 8px;
+                dark: root.kind == 1;
+            }
+
+            // Sistem: sol yari acik, sag yari koyu.
+            if root.kind == 0: Rectangle {
+                x: 4px;
+                y: 4px;
+                width: (parent.width - 8px) / 2;
+                height: parent.height - 8px;
+                clip: true;
+                MiniScreen {
+                    x: 0;
+                    width: parent.width * 2;
+                    height: parent.height;
+                    dark: false;
+                }
+            }
+
+            if root.kind == 0: Rectangle {
+                x: parent.width / 2;
+                y: 4px;
+                width: (parent.width - 8px) / 2;
+                height: parent.height - 8px;
+                clip: true;
+                MiniScreen {
+                    x: -parent.width;
+                    width: parent.width * 2;
+                    height: parent.height;
+                    dark: true;
+                }
+            }
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.clicked();
                 }
             }
         }
     }
 
-    Hint {
-        text: "Animasyonlar yalnızca bir şey değiştiğinde çalışır; pencere boşta beklerken işlemci kullanılmaz. Windows'ta animasyonlar kapalıysa geçişler kısalır.";
+    Text {
+        text: root.label;
+        color: Theme.label;
+        font-size: Type.callout;
+        horizontal-alignment: center;
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            border-width: root.selected ? 0 : 1.5px;
+            border-color: Theme.tertiary;
+            background: root.selected ? Theme.blue : transparent;
+            animate background { duration: Motion.fast; }
+            Icon {
+                commands: Icons.line-check;
+                width: 14px;
+                height: 14px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                weight: 2.6px;
+                tint: #FFFFFF.with-alpha(root.selected ? 1 : 0);
+            }
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.clicked();
+                }
+            }
+        }
+    }
+}
+
+export component AppearancePage inherits SubPage {
+    title: "Görünüm";
+
+    Group {
+        header: "TEMA";
+        footer: "Sistem, Windows'un açık/koyu ayarını izler.";
+        HorizontalLayout {
+            padding-top: 18px;
+            padding-bottom: 16px;
+            alignment: space-around;
+            ThemePreview {
+                label: "Sistem";
+                kind: 0;
+                selected: AppState.theme-index == 0;
+                clicked => {
+                    AppState.select-theme(0);
+                }
+            }
+
+            ThemePreview {
+                label: "Açık";
+                kind: 2;
+                selected: AppState.theme-index == 2;
+                clicked => {
+                    AppState.select-theme(2);
+                }
+            }
+
+            ThemePreview {
+                label: "Koyu";
+                kind: 1;
+                selected: AppState.theme-index == 1;
+                clicked => {
+                    AppState.select-theme(1);
+                }
+            }
+        }
     }
 }
 
 // ================================================================== hakkinda
 
+/// Uygulama simgesi: yesil zemin uzerinde beyaz kose parantezleri ve dunya.
+export component AppMark inherits Rectangle {
+    width: 84px;
+    height: 84px;
+
+    // Zemin: surekli egrili yuvarlak kare (superelips, n = 4); koseler yumusak, kenar
+    // yumusatmasi yol ciziciden gelir.
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: "M 100.00 50.00 L 99.97 61.44 L 99.86 66.17 L 99.69 69.78 L 99.45 72.80 L 99.14 75.44 L 98.76 77.79 L 98.31 79.93 L 97.79 81.89 L 97.20 83.69 L 96.53 85.36 L 95.79 86.90 L 94.97 88.33 L 94.08 89.66 L 93.10 90.90 L 92.04 92.04 L 90.90 93.10 L 89.66 94.08 L 88.33 94.97 L 86.90 95.79 L 85.36 96.53 L 83.69 97.20 L 81.89 97.79 L 79.93 98.31 L 77.79 98.76 L 75.44 99.14 L 72.80 99.45 L 69.78 99.69 L 66.17 99.86 L 61.44 99.97 L 50.00 100.00 L 38.56 99.97 L 33.83 99.86 L 30.22 99.69 L 27.20 99.45 L 24.56 99.14 L 22.21 98.76 L 20.07 98.31 L 18.11 97.79 L 16.31 97.20 L 14.64 96.53 L 13.10 95.79 L 11.67 94.97 L 10.34 94.08 L 9.10 93.10 L 7.96 92.04 L 6.90 90.90 L 5.92 89.66 L 5.03 88.33 L 4.21 86.90 L 3.47 85.36 L 2.80 83.69 L 2.21 81.89 L 1.69 79.93 L 1.24 77.79 L 0.86 75.44 L 0.55 72.80 L 0.31 69.78 L 0.14 66.17 L 0.03 61.44 L 0.00 50.00 L 0.03 38.56 L 0.14 33.83 L 0.31 30.22 L 0.55 27.20 L 0.86 24.56 L 1.24 22.21 L 1.69 20.07 L 2.21 18.11 L 2.80 16.31 L 3.47 14.64 L 4.21 13.10 L 5.03 11.67 L 5.92 10.34 L 6.90 9.10 L 7.96 7.96 L 9.10 6.90 L 10.34 5.92 L 11.67 5.03 L 13.10 4.21 L 14.64 3.47 L 16.31 2.80 L 18.11 2.21 L 20.07 1.69 L 22.21 1.24 L 24.56 0.86 L 27.20 0.55 L 30.22 0.31 L 33.83 0.14 L 38.56 0.03 L 50.00 0.00 L 61.44 0.03 L 66.17 0.14 L 69.78 0.31 L 72.80 0.55 L 75.44 0.86 L 77.79 1.24 L 79.93 1.69 L 81.89 2.21 L 83.69 2.80 L 85.36 3.47 L 86.90 4.21 L 88.33 5.03 L 89.66 5.92 L 90.90 6.90 L 92.04 7.96 L 93.10 9.10 L 94.08 10.34 L 94.97 11.67 L 95.79 13.10 L 96.53 14.64 L 97.20 16.31 L 97.79 18.11 L 98.31 20.07 L 98.76 22.21 L 99.14 24.56 L 99.45 27.20 L 99.69 30.22 L 99.86 33.83 L 99.97 38.56 Z";
+        fill: #2DC253;
+    }
+
+    Path {
+        width: 56px;
+        height: 56px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: "M 35 6 L 19 6 A 13 13 0 0 0 6 19 L 6 35 M 65 6 L 81 6 A 13 13 0 0 1 94 19 L 94 35 M 94 65 L 94 81 A 13 13 0 0 1 81 94 L 65 94 M 35 94 L 19 94 A 13 13 0 0 1 6 81 L 6 65";
+        fill: transparent;
+        stroke: #FFFFFF;
+        stroke-width: 4.2px;
+        stroke-line-cap: round;
+    }
+
+    Path {
+        width: 56px;
+        height: 56px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: "M 50 28 A 22 22 0 1 1 50 72 A 22 22 0 1 1 50 28 M 28 50 L 72 50 M 50 28 L 50 72 M 50 28 C 58.59 28 65.56 37.85 65.56 50 C 65.56 62.15 58.59 72 50 72 M 50 28 C 41.41 28 34.44 37.85 34.44 50 C 34.44 62.15 41.41 72 50 72";
+        fill: transparent;
+        stroke: #FFFFFF;
+        stroke-width: 3.2px;
+        stroke-line-cap: round;
+    }
+}
+
 export component AboutPage inherits SubPage {
     title: "Hakkında";
 
-    Card {
-        heading: "GOODBYEDPI UI 3";
+    VerticalLayout {
+        padding-top: 36px;
+        spacing: 14px;
+        HorizontalLayout {
+            alignment: center;
+            AppMark { }
+        }
+
         VerticalLayout {
-            padding-top: 6px;
-            spacing: 6px;
+            spacing: 3px;
+            Text {
+                text: "GoodbyeDPI UI 3";
+                color: Theme.label;
+                font-family: Type.display;
+                font-size: 20px;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+
             Text {
                 text: "Sürüm " + AppState.version;
-                color: Theme.text;
-                font-size: 14px;
-                font-weight: 600;
-            }
-
-            Hint {
-                text: "DPI atlatma aracı. Motor ayrı bir Windows hizmeti olarak çalışır; arayüz kapalıyken bellekte yer tutmaz.";
+                color: Theme.secondary;
+                font-size: Type.callout;
+                horizontal-alignment: center;
             }
         }
     }
-
-    Card {
-        heading: "TEŞEKKÜRLER";
-        VerticalLayout {
-            padding-top: 6px;
-            spacing: 4px;
-            Hint {
-                text: "GoodbyeDPI (ValdikSS), zapret (bol-van) ve SplitWire-Turkey (cagritaskn) projelerinin fikirleri üzerine kurulmuştur.";
-            }
-
-            Hint {
-                text: "WinDivert (basil00) — LGPL-3.0. Arayüz Slint ile yapılmıştır.";
-            }
-        }
-    }
-
 }

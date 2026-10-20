@@ -1,44 +1,34 @@
 //! Tepsi sureci (`GoodbyeDPI3.exe --tray`): saf Win32, Slint yuklenmez (~2 MB).
-//! Simge motor durumunu gosterir; sol tik pencereyi acar, sag tik kisa menu.
+//! Simge motor durumunu gosterir; sol tik pencereyi acar, sag tik uygulamaya ozel menu
+//! (`traymenu`).
 //! Explorer yeniden baslarsa (TaskbarCreated) simge yeniden eklenir.
 
 use std::sync::{Mutex, OnceLock};
 
 use shared::ipc::{EngineState, Event, Request};
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NOTIFYICON_VERSION_4,
     NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, GetSystemMetrics, HICON, MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage,
-    RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow, SetMenuDefaultItem, TPM_BOTTOMALIGN,
-    TPM_RIGHTBUTTON, TPM_RETURNCMD, TrackPopupMenu, TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONUP,
-    WNDCLASSW, WS_OVERLAPPED,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, GetSystemMetrics, HICON, MSG, PostMessageW,
+    PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY,
+    WM_LBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
 };
 
 use crate::client::{Client, Incoming};
 use crate::iconart::Mark;
+use crate::traymenu::{self, Action, View};
 use crate::winsys::{self, wide};
 
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_STATE: u32 = WM_APP + 2;
+/// Baska bir surec "cik" dedi (pencere kapatildi ya da `--quit`).
+const WM_QUIT_ALL: u32 = WM_APP + 3;
 const NIN_SELECT: u32 = 0x0400;
 const NIN_KEYSELECT: u32 = 0x0401;
-const CMD_TOGGLE: usize = 1;
-const CMD_OPEN: usize = 2;
-const CMD_EXIT: usize = 3;
-
-#[derive(Clone, Default)]
-struct View {
-    connected: bool,
-    state: EngineState,
-    method: String,
-    dns: String,
-    message: Option<String>,
-}
 
 struct Tray {
     hwnd: usize,
@@ -52,24 +42,6 @@ static TRAY: OnceLock<Mutex<Tray>> = OnceLock::new();
 
 fn tray() -> std::sync::MutexGuard<'static, Tray> {
     TRAY.get().expect("tepsi kurulmadi").lock().unwrap()
-}
-
-/// Sag tik menusunun koyu temaya uymasi (uxtheme sirasiz islevleri; yoksa sessizce gecer).
-fn allow_dark_menus() {
-    unsafe {
-        let lib = LoadLibraryW(wide("uxtheme.dll").as_ptr());
-        if lib.is_null() {
-            return;
-        }
-        if let Some(f) = GetProcAddress(lib, 135 as *const u8) {
-            let set_mode: extern "system" fn(i32) -> i32 = std::mem::transmute(f);
-            set_mode(1); // AllowDark: sistem temasini izle
-        }
-        if let Some(f) = GetProcAddress(lib, 136 as *const u8) {
-            let flush: extern "system" fn() = std::mem::transmute(f);
-            flush();
-        }
-    }
 }
 
 fn notify_data(hwnd: HWND) -> NOTIFYICONDATAW {
@@ -135,43 +107,40 @@ fn open_window() {
     }
 }
 
-fn show_menu(hwnd: HWND) {
+/// Menunun temasi: uygulamada secilen tema; "sistem" ise gorev cubugunun temasi.
+fn menu_is_dark() -> bool {
+    match crate::prefs::load().theme {
+        1 => true,
+        2 => false,
+        _ => !winsys::system_uses_light_taskbar(),
+    }
+}
+
+fn show_menu() {
     let v = tray().view.clone();
-    unsafe {
-        let menu = CreatePopupMenu();
-        let (label, flags) = if !v.connected {
-            ("Motor hizmeti kapalı", MF_STRING | MF_GRAYED)
-        } else if matches!(v.state, EngineState::On | EngineState::Starting) {
-            ("Bağlantıyı kes", MF_STRING)
-        } else {
-            ("Bağlan", MF_STRING)
-        };
-        AppendMenuW(menu, flags, CMD_TOGGLE, wide(label).as_ptr());
-        AppendMenuW(menu, MF_STRING, CMD_OPEN, wide("GoodbyeDPI'ı aç").as_ptr());
-        AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
-        AppendMenuW(menu, MF_STRING, CMD_EXIT, wide("Tepsiden çık").as_ptr());
-        SetMenuDefaultItem(menu, CMD_OPEN as u32, 0);
+    traymenu::show(&v, menu_is_dark(), on_menu_action);
+}
 
-        let mut pt = POINT { x: 0, y: 0 };
-        GetCursorPos(&mut pt);
-        // Menu disina tiklaninca kapanmasi icin pencere one alinmali (Win32 kurali).
-        SetForegroundWindow(hwnd);
-        let cmd = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RETURNCMD, pt.x, pt.y, 0, hwnd, std::ptr::null()) as usize;
-        DestroyMenu(menu);
-
-        match cmd {
-            CMD_TOGGLE => {
-                let client = tray().client.clone();
-                if let Some(c) = client {
-                    let req = if matches!(v.state, EngineState::On | EngineState::Starting) { Request::Disconnect } else { Request::Connect };
-                    c.send(req);
-                }
+fn on_menu_action(action: Action) {
+    match action {
+        Action::Toggle => {
+            let (client, on) = {
+                let t = tray();
+                (t.client.clone(), matches!(t.view.state, EngineState::On | EngineState::Starting))
+            };
+            if let Some(c) = client {
+                c.send(if on { Request::Disconnect } else { Request::Connect });
             }
-            CMD_OPEN => open_window(),
-            CMD_EXIT => {
-                DestroyWindow(hwnd);
-            }
-            _ => {}
+        }
+        Action::StartService => {
+            let _ = winsys::start_service();
+        }
+        Action::Open => open_window(),
+        Action::Quit => {
+            // Acik pencere de kapanir; motor hizmeti kendi ayarina gore calismaya devam eder.
+            winsys::signal_quit();
+            let hwnd = tray().hwnd as HWND;
+            unsafe { DestroyWindow(hwnd) };
         }
     }
 }
@@ -181,14 +150,25 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_TRAY => {
             let event = (lparam as u32) & 0xFFFF;
             match event {
-                WM_LBUTTONUP | NIN_SELECT | NIN_KEYSELECT => open_window(),
-                WM_CONTEXTMENU => show_menu(hwnd),
+                WM_LBUTTONUP | NIN_SELECT | NIN_KEYSELECT => {
+                    traymenu::close();
+                    open_window();
+                }
+                WM_CONTEXTMENU => show_menu(),
                 _ => {}
             }
             0
         }
         WM_STATE => {
             update_icon(false);
+            if traymenu::is_open() {
+                let v = tray().view.clone();
+                traymenu::update(&v);
+            }
+            0
+        }
+        WM_QUIT_ALL => {
+            unsafe { DestroyWindow(hwnd) };
             0
         }
         WM_DESTROY => {
@@ -208,10 +188,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 pub fn run() -> i32 {
-    if !winsys::claim_mutex("Local\\GoodbyeDPI3.Tray") {
+    if !winsys::claim_mutex(&winsys::instance_name("Local\\GoodbyeDPI3.Tray")) {
         return 0;
     }
-    allow_dark_menus();
+    let quit = winsys::quit_event() as usize;
     unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = wide("GoodbyeDPI3Tray");
@@ -260,6 +240,24 @@ pub fn run() -> i32 {
             PostMessageW(hwnd_val as HWND, WM_STATE, 0, 0);
         });
         tray().client = Some(client);
+
+        // Pencere "her seyi kapat" dediginde ya da `--quit` ile tepsi de kapanir.
+        std::thread::Builder::new()
+            .name("cikis".into())
+            .stack_size(64 * 1024)
+            .spawn(move || {
+                use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+                use windows_sys::Win32::System::Threading::{INFINITE, WaitForSingleObject};
+                if WaitForSingleObject(quit as _, INFINITE) == WAIT_OBJECT_0 {
+                    PostMessageW(hwnd_val as HWND, WM_QUIT_ALL, 0, 0);
+                }
+            })
+            .ok();
+
+        // Testler: menu acilista acilir (ekran goruntusu ve tiklama denemeleri icin).
+        if std::env::var_os("GDPI3_TEST").is_some() && std::env::var_os("GDPI3_TRAY_MENU").is_some() {
+            PostMessageW(hwnd, WM_TRAY, 0, WM_CONTEXTMENU as isize);
+        }
 
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {

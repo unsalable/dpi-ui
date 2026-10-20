@@ -26,6 +26,14 @@ cargo test --workspace
 powershell -ExecutionPolicy Bypass -File publish.ps1   # -> build\GoodbyeDPI-UI-3-Setup.exe
 ```
 
+Arayüz testleri pencere açmadan bellekte çizer; `GDPI3_SHOTS=<klasör>` verilirse her sayfanın ve
+bağlanma animasyonunun ekran görüntülerini PNG olarak yazar. Pencere/tepsi kapanma senaryoları:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File perf\quit-test.ps1 -Exe target\release\GoodbyeDPI3.exe
+powershell -ExecutionPolicy Bypass -File perf\tray-menu-test.ps1 -Exe target\release\GoodbyeDPI3.exe
+```
+
 Canlı test (yönetici terminali, uygulamada bağlantı kesikken):
 
 ```powershell

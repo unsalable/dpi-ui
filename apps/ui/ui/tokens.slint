@@ -1,34 +1,80 @@
-// Tasarim belirtecleri: tum renkler, olculer ve hareket sureleri yalnizca buradan gelir.
-// Palet: "Nane gecesi".
+// Tasarim belirtecleri. Renkler Apple'in sistem renkleridir (iOS/macOS, koyu ve acik
+// gorunum); yazi Segoe UI Variable. Tum renkler, olculer ve sureler yalnizca buradan gelir.
 
 export global Theme {
     in-out property <bool> dark: true;
 
-    out property <color> bg: dark ? #0B0E13 : #F5F7FA;
-    out property <color> surface: dark ? #121620 : #FFFFFF;
-    out property <color> surface-2: dark ? #1A1F2B : #EEF1F5;
-    out property <color> stroke: dark ? #252B38 : #DDE2EA;
-    out property <color> text: dark ? #ECF1F7 : #0C1220;
-    out property <color> text-muted: dark ? #8B95A7 : #5A6578;
-    out property <color> accent: dark ? #2CF0A8 : #00A874;
-    out property <color> accent-2: dark ? #19C3F0 : #0096C7;
-    out property <color> on-accent: #06110C;
-    out property <color> danger: dark ? #FF5D6C : #D93445;
-    out property <color> warn: dark ? #FFB648 : #B7791F;
-    out property <brush> accent-gradient: @linear-gradient(135deg, accent 0%, accent-2 100%);
+    // Zeminler: gruplu liste duzeni (siyah/acik gri zemin uzerinde hucreler).
+    out property <color> bg: dark ? #000000 : #F2F2F7;
+    out property <color> cell: dark ? #1C1C1E : #FFFFFF;
+    out property <color> cell-hover: dark ? #232325 : #F8F8FA;
+    out property <color> cell-pressed: dark ? #2C2C2E : #E5E5EA;
+    /// Acilir menu ve bildirim gibi one cikan yuzeyler.
+    out property <color> elevated: dark ? #2C2C2E : #FFFFFF;
+    out property <color> elevated-stroke: dark ? #3A3A3C : #D1D1D6;
+    out property <color> separator: dark ? #38383A : #D1D1D6;
+    /// Anahtar kapali zemini, alan zemini, dugme dolgusu.
+    out property <color> fill: dark ? #39393D : #E9E9EB;
+    out property <color> fill-hover: dark ? #48484A : #DEDEE2;
+    out property <color> segment-track: dark ? #1F1F21 : #E4E4E9;
+    out property <color> segment-thumb: dark ? #5A5A5E : #FFFFFF;
+    out property <color> segment-thumb-stroke: dark ? #5A5A5E : #D8D8DD;
+
+    // Metin.
+    out property <color> label: dark ? #FFFFFF : #000000;
+    out property <color> secondary: dark ? #8D8D93 : #6E6E73;
+    out property <color> tertiary: dark ? #5A5A5F : #C4C4C7;
+    out property <color> placeholder: dark ? #6C6C70 : #A1A1A6;
+
+    // Sistem renkleri.
+    out property <color> blue: dark ? #0A84FF : #007AFF;
+    out property <color> green: dark ? #30D158 : #34C759;
+    out property <color> red: dark ? #FF453A : #FF3B30;
+    out property <color> orange: dark ? #FF9F0A : #FF9500;
+    out property <color> teal: dark ? #40C8E0 : #30B0C7;
+    out property <color> indigo: dark ? #5E5CE6 : #5856D6;
+    out property <color> gray: #8E8E93;
+    out property <color> on-tint: #FFFFFF;
+}
+
+export global Type {
+    out property <string> display: "Segoe UI Variable Display";
+    out property <length> large-title: 28px;
+    out property <length> title: 24px;
+    out property <length> headline: 15px;
+    out property <length> body: 14px;
+    out property <length> callout: 13px;
+    out property <length> footnote: 12px;
 }
 
 export global Metrics {
-    out property <length> radius-sm: 6px;
-    out property <length> radius: 10px;
-    out property <length> radius-lg: 16px;
-    out property <length> control-height: 36px;
-    out property <length> titlebar-height: 44px;
+    out property <length> margin: 16px;
+    out property <length> row: 44px;
+    out property <length> group-radius: 12px;
+    out property <length> tile: 28px;
+    out property <length> tile-radius: 7px;
+    out property <length> control-radius: 9px;
+    out property <length> navbar: 52px;
 }
 
 export global Motion {
-    out property <duration> fast: 120ms;
-    out property <duration> snap: 180ms;
-    out property <duration> base: 240ms;
-    out property <duration> slow: 420ms;
+    /// Windows'ta "Animasyon efektleri" kapaliysa false; tum gecisler aninda olur.
+    in-out property <bool> enabled: true;
+    /// Sure carpani: animasyonlar kapaliyken 0.
+    out property <float> scale: enabled ? 1 : 0;
+
+    out property <duration> fast: enabled ? 120ms : 0ms;
+    out property <duration> base: enabled ? 240ms : 0ms;
+    out property <duration> slow: enabled ? 420ms : 0ms;
+    /// Sayfa gecisi (iOS itme gecisi).
+    out property <duration> push: enabled ? 380ms : 0ms;
+}
+
+/// Hareket egrileri (Rust'a acilmaz).
+export global Curves {
+    /// iOS itme gecisi.
+    out property <easing> push: cubic-bezier(0.32, 0.72, 0, 1);
+    /// Hafif tasip yerine oturan yay.
+    out property <easing> spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+    out property <easing> out: cubic-bezier(0.22, 1, 0.36, 1);
 }

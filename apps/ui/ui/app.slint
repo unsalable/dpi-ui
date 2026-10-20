@@ -1,108 +1,12 @@
-﻿import { Theme, Metrics, Motion } from "tokens.slint";
+﻿import { Theme, Type, Metrics, Motion, Curves } from "tokens.slint";
 import { Icons } from "icons.slint";
-import { PowerState } from "orb.slint";
-import { IconButton } from "components.slint";
+import { PowerState } from "connect.slint";
+import { GlyphButton } from "components.slint";
 import { Toast } from "widgets.slint";
 import { AppState, Choice, HostItem, BenchItem, CategoryItem } from "state.slint";
 import { HomePage, SettingsMenu, MethodPage, DnsPage, SitesPage, GeneralPage, AppearancePage, AboutPage } from "pages.slint";
 
-export { PowerState, Theme, AppState, Choice, HostItem, BenchItem, CategoryItem }
-
-component TitleBar inherits Rectangle {
-    callback drag();
-    callback settings();
-    callback minimize();
-    callback close-window();
-
-    height: Metrics.titlebar-height;
-
-    TouchArea {
-        pointer-event(event) => {
-            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
-                root.drag();
-            }
-        }
-    }
-
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 6px;
-        spacing: 4px;
-
-        HorizontalLayout {
-            horizontal-stretch: 1;
-            alignment: start;
-            spacing: 8px;
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 10px;
-                    height: 10px;
-                    border-radius: 5px;
-                    background: AppState.power == PowerState.on ? Theme.accent : AppState.power == PowerState.error ? Theme.danger : Theme.text-muted;
-                    animate background { duration: Motion.base; }
-                }
-            }
-
-            Text {
-                text: "GoodbyeDPI";
-                color: Theme.text;
-                font-size: 14px;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    height: 16px;
-                    width: badge.preferred-width + 10px;
-                    border-radius: 5px;
-                    background: Theme.accent.with-alpha(0.14);
-                    badge := Text {
-                        text: "3";
-                        color: Theme.accent;
-                        font-size: 11px;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.sliders;
-                clicked => {
-                    root.settings();
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.minimize;
-                clicked => {
-                    root.minimize();
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.close;
-                danger-hover: true;
-                clicked => {
-                    root.close-window();
-                }
-            }
-        }
-    }
-}
+export { PowerState, Theme, Motion, AppState, Choice, HostItem, BenchItem, CategoryItem }
 
 export component AppWindow inherits Window {
     title: "GoodbyeDPI UI 3";
@@ -113,18 +17,19 @@ export component AppWindow inherits Window {
     default-font-family: "Segoe UI Variable Text";
     default-font-size: 14px;
 
-    /// 0 = ana sayfa, 1 = ayarlar menusu, 2 = alt sayfa.
+    /// 0 = ana ekran, 1 = ayarlar menusu, 2 = alt sayfa.
     in-out property <int> depth: 0;
     /// Alt sayfa: 1 yontem, 2 dns, 3 siteler, 4 genel, 5 gorunum, 6 hakkinda.
     in-out property <int> sub: 0;
-    /// Alt sayfaya ana sayfadan dogrudan gelindiyse geri tusu ana sayfaya doner.
-    property <bool> sub-from-home: false;
+    /// Alt sayfaya ana ekrandan dogrudan gelindiyse geri tusu ana ekrana doner.
+    in-out property <bool> sub-from-home: false;
 
-    callback drag-window();
     callback minimize();
     callback close-window();
-    /// Pencere gorunur/gizli: Rust tarafi sayaclari yalnizca gorunurken yeniler.
+    /// Rust tarafi sayaclari yalnizca ana ekran gorunurken yeniler.
     callback page-changed(int, int);
+    /// Testler icin: bildirim ekranda mi?
+    out property <bool> toast-visible: toast.visible-now;
 
     function go(d: int, s: int) {
         root.depth = d;
@@ -141,122 +46,145 @@ export component AppWindow inherits Window {
         }
     }
 
-    VerticalLayout {
-        TitleBar {
-            drag => {
-                root.drag-window();
-            }
-            settings => {
+    // iOS itme gecisi: yeni sayfa sagdan gelir, alttaki %30 sola kayar ve kararir.
+    property <length> w: self.width;
+    property <bool> menu-shown: root.depth == 1 || (root.depth == 2 && !root.sub-from-home);
+
+    body := Rectangle {
+        clip: true;
+
+        home := HomePage {
+            x: root.depth >= 1 ? -root.w * 0.3 : 0px;
+            width: parent.width;
+            height: parent.height;
+            covered: -self.x / (root.w * 0.3);
+            animate x { duration: Motion.push; easing: Curves.push; }
+            open-settings => {
                 root.sub-from-home = false;
-                root.go(root.depth == 0 ? 1 : 0, root.sub);
+                root.go(1, root.sub);
             }
-            minimize => {
-                root.minimize();
+            open-method => {
+                root.sub-from-home = true;
+                root.go(2, 1);
             }
-            close-window => {
-                root.close-window();
+            open-dns => {
+                root.sub-from-home = true;
+                root.go(2, 2);
             }
         }
 
-        body := Rectangle {
-            clip: true;
+        SettingsMenu {
+            x: !root.menu-shown ? root.w : root.depth == 1 ? 0px : -root.w * 0.3;
+            width: parent.width;
+            height: parent.height;
+            covered: -self.x / (root.w * 0.3);
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+            open(page) => {
+                root.go(2, page);
+            }
+        }
 
-            HomePage {
-                x: root.depth >= 1 ? -parent.width * 0.25 : 0px;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                open-method => {
-                    root.sub-from-home = true;
-                    root.go(2, 1);
-                }
-                open-dns => {
-                    root.sub-from-home = true;
-                    root.go(2, 2);
+        MethodPage {
+            x: root.depth == 2 && root.sub == 1 ? 0px : root.w;
+            width: parent.width;
+            height: parent.height;
+            back-text: root.sub-from-home ? "" : "Ayarlar";
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+        }
+
+        DnsPage {
+            x: root.depth == 2 && root.sub == 2 ? 0px : root.w;
+            width: parent.width;
+            height: parent.height;
+            back-text: root.sub-from-home ? "" : "Ayarlar";
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+        }
+
+        SitesPage {
+            x: root.depth == 2 && root.sub == 3 ? 0px : root.w;
+            width: parent.width;
+            height: parent.height;
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+        }
+
+        GeneralPage {
+            x: root.depth == 2 && root.sub == 4 ? 0px : root.w;
+            width: parent.width;
+            height: parent.height;
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+        }
+
+        AppearancePage {
+            x: root.depth == 2 && root.sub == 5 ? 0px : root.w;
+            width: parent.width;
+            height: parent.height;
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+        }
+
+        AboutPage {
+            x: root.depth == 2 && root.sub == 6 ? 0px : root.w;
+            width: parent.width;
+            height: parent.height;
+            animate x { duration: Motion.push; easing: Curves.push; }
+            back => {
+                root.back();
+            }
+        }
+
+        // Pencere dugmeleri her sayfanin ustunde, ayni yerde durur.
+        HorizontalLayout {
+            x: parent.width - self.width - 8px;
+            y: 10px;
+            width: self.preferred-width;
+            height: 32px;
+            spacing: 2px;
+            GlyphButton {
+                icon: Icons.line-minimize;
+                icon-size: 15px;
+                weight: 1.4px;
+                label: "Simge durumuna küçült";
+                clicked => {
+                    root.minimize();
                 }
             }
 
-            SettingsMenu {
-                x: root.depth == 0 || (root.depth == 2 && root.sub-from-home) ? parent.width : root.depth == 1 ? 0px : -parent.width * 0.25;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-                open(page) => {
-                    root.go(2, page);
+            GlyphButton {
+                icon: Icons.line-close;
+                icon-size: 15px;
+                weight: 1.4px;
+                danger: true;
+                label: "Kapat";
+                clicked => {
+                    root.close-window();
                 }
             }
+        }
 
-            MethodPage {
-                x: root.depth == 2 && root.sub == 1 ? 0px : parent.width;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-            }
-
-            DnsPage {
-                x: root.depth == 2 && root.sub == 2 ? 0px : parent.width;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-            }
-
-            SitesPage {
-                x: root.depth == 2 && root.sub == 3 ? 0px : parent.width;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-            }
-
-            GeneralPage {
-                x: root.depth == 2 && root.sub == 4 ? 0px : parent.width;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-            }
-
-            AppearancePage {
-                x: root.depth == 2 && root.sub == 5 ? 0px : parent.width;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-            }
-
-            AboutPage {
-                x: root.depth == 2 && root.sub == 6 ? 0px : parent.width;
-                width: parent.width;
-                height: parent.height;
-                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-                back => {
-                    root.back();
-                }
-            }
-
-            Toast {
-                x: 16px;
-                y: parent.height - self.height - 16px;
-                width: parent.width - 32px;
-                text: AppState.toast;
-                error: AppState.toast-error;
-                serial: AppState.toast-serial;
-            }
+        toast := Toast {
+            width: min(parent.width - 32px, self.preferred-width);
+            x: (parent.width - self.width) / 2;
+            bottom: parent.height;
+            text: AppState.toast;
+            error: AppState.toast-error;
+            serial: AppState.toast-serial;
         }
     }
 }

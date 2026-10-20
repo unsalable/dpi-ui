@@ -1,12 +1,14 @@
 // Arayuzun tek durum kaynagi. Rust tarafi servisten gelen olaylarla doldurur;
 // sayfalar yalnizca bunu okur ve geri cagrilari tetikler.
 
-import { PowerState } from "orb.slint";
+import { PowerState } from "connect.slint";
 
 export struct Choice {
     id: string,
     title: string,
     subtitle: string,
+    /// Basligin yaninda kisa vurgu (orn. "Onerilen"); bos olabilir.
+    badge: string,
 }
 
 export struct HostItem {
@@ -36,12 +38,11 @@ export global AppState {
     in-out property <PowerState> power: PowerState.off;
     in-out property <bool> service-missing: false;
     in-out property <string> status-title: "Kapalı";
-    in-out property <string> status-sub: "Açmak için küreye dokun";
+    in-out property <string> status-sub: "Bağlanmak için dokun";
     /// Bos degilse ana ekranda uyari seridi.
     in-out property <string> banner;
     in-out property <string> method-name: "Varsayılan";
     in-out property <string> dns-name: "Cloudflare DoH";
-    in-out property <string> stats-line;
 
     // ---------------------------------------------------------------- baglanti
     in-out property <[Choice]> isps;
@@ -84,9 +85,8 @@ export global AppState {
     in-out property <string> toast;
     in-out property <bool> toast-error;
     in-out property <int> toast-serial;
-    /// Yalnizca ekran goruntusu testleri: ISS listesini acik baslat.
-    in-out property <bool> debug-open-select;
 
+    callback drag-window();
     callback power-toggle();
     callback start-service();
     callback select-isp(int);
