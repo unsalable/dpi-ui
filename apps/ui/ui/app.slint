@@ -32,6 +32,9 @@ export component AppWindow inherits Window {
     callback page-changed(int, int);
     /// Testler icin: bildirim ekranda mi?
     out property <bool> toast-visible: toast.visible-now;
+    /// Testler icin: ana ekranin ve ayarlar menusunun yatay konumu (gecis yonu).
+    out property <length> home-x: home.x;
+    out property <length> menu-x: menu.x;
 
     function go(d: int, s: int) {
         root.depth = d;
@@ -48,7 +51,8 @@ export component AppWindow inherits Window {
         }
     }
 
-    // iOS itme gecisi: yeni sayfa sagdan gelir, alttaki %30 sola kayar ve kararir.
+    // Ayarlar menusu, dugmesinin oldugu sol taraftan gelir; ana ekran %30 saga kayar ve kararir.
+    // Alt sayfalar iOS itme gecisiyle sagdan gelir; alttaki sayfa %30 sola kayar ve kararir.
     property <length> w: self.width;
     property <bool> menu-shown: root.depth == 1 || (root.depth == 2 && !root.sub-from-home);
 
@@ -56,11 +60,11 @@ export component AppWindow inherits Window {
         clip: true;
 
         home := HomePage {
-            x: root.depth >= 1 ? -root.w * 0.3 : 0px;
+            x: root.depth == 0 ? 0px : root.menu-shown ? root.w * 0.3 : -root.w * 0.3;
             width: parent.width;
             height: parent.height;
-            covered: -self.x / (root.w * 0.3);
-            animate x { duration: Motion.push; easing: Curves.push; }
+            covered: root.depth == 0 ? 0 : 1;
+            animate x, covered { duration: Motion.push; easing: Curves.push; }
             open-settings => {
                 root.sub-from-home = false;
                 root.go(1, root.sub);
@@ -75,12 +79,13 @@ export component AppWindow inherits Window {
             }
         }
 
-        SettingsMenu {
-            x: !root.menu-shown ? root.w : root.depth == 1 ? 0px : -root.w * 0.3;
+        // Karartma yalnizca ustune alt sayfa itilince: soldan gelirken ya da sola cekilirken kararmaz.
+        menu := SettingsMenu {
+            x: !root.menu-shown ? -root.w : root.depth == 1 ? 0px : -root.w * 0.3;
             width: parent.width;
             height: parent.height;
-            covered: -self.x / (root.w * 0.3);
-            animate x { duration: Motion.push; easing: Curves.push; }
+            covered: root.menu-shown && root.depth == 2 ? 1 : 0;
+            animate x, covered { duration: Motion.push; easing: Curves.push; }
             back => {
                 root.back();
             }

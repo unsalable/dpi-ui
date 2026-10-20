@@ -296,6 +296,57 @@ mod tests {
         }
     }
 
+    /// Ayarlar dugmesi sol ustte: menu soldan gelir, ana ekran saga kayar; kapanirken menu sola
+    /// cekilir. Menuden acilan alt sayfa ise sagdan gelir (menu sola kayar).
+    #[test]
+    fn settings_menu_slides_in_from_the_left() {
+        let mut h = Harness::new(1.0);
+        gallery::sample(&h, EngineState::Off);
+        // Gercek pencere gibi her 16 ms'de bir kare cizerek zamani ilerletir.
+        let play = |h: &mut Harness, ms: u64, frames: &mut Vec<Vec<u8>>| {
+            for _ in 0..ms / 16 {
+                h.advance(16);
+                frames.push(h.frame());
+            }
+        };
+        let mut open = vec![h.frame()];
+        assert!(h.app.get_menu_x() <= -W + 0.5, "kapaliyken menu solda beklemeli: {}", h.app.get_menu_x());
+
+        h.click(28.0, 26.0);
+        play(&mut h, 80, &mut open);
+        let (m, home) = (h.app.get_menu_x(), h.app.get_home_x());
+        assert!(m < 0.0 && m > -W, "acilirken menu soldan gelmeli: {m}");
+        assert!(home > 0.0, "acilirken ana ekran saga kaymali: {home}");
+        play(&mut h, 560, &mut open);
+        assert_eq!(h.app.get_menu_x(), 0.0);
+        let (w, hh) = h.size();
+        let pick: Vec<Vec<u8>> = [0usize, 2, 4, 6, 9, 14, 24].iter().map(|&i| open[i].clone()).collect();
+        strip("settings-open", &pick, w, hh, (0, 0, w, hh));
+
+        // Alt sayfa sagdan gelir; menu sola kayar.
+        let mut rest = Vec::new();
+        h.click(200.0, 136.0);
+        play(&mut h, 80, &mut rest);
+        assert!(h.app.get_menu_x() < 0.0, "alt sayfa acilirken menu sola kaymali");
+        play(&mut h, 560, &mut rest);
+        h.click(40.0, 26.0);
+        play(&mut h, 640, &mut rest);
+        assert_eq!(h.app.get_menu_x(), 0.0, "alt sayfadan donunce menu yerinde");
+
+        // Kapanirken menu sola cekilir, ana ekran sagdan yerine doner.
+        let mut close = vec![h.frame()];
+        h.click(24.0, 26.0);
+        play(&mut h, 80, &mut close);
+        let (m, home) = (h.app.get_menu_x(), h.app.get_home_x());
+        assert!(m < 0.0, "kapanirken menu sola cekilmeli: {m}");
+        assert!(home > 0.0, "ana ekran sagdan donmeli: {home}");
+        play(&mut h, 560, &mut close);
+        assert_eq!(h.app.get_home_x(), 0.0);
+        assert!(h.app.get_menu_x() <= -W + 0.5);
+        let pick: Vec<Vec<u8>> = [0usize, 2, 4, 6, 9, 14, 24].iter().map(|&i| close[i].clone()).collect();
+        strip("settings-close", &pick, w, hh, (0, 0, w, hh));
+    }
+
     /// Simgeye dokunmak baglanir/keser; motor hizmeti yoksa hizmeti baslatir.
     #[test]
     fn glyph_toggles_power_or_starts_service() {
