@@ -7,26 +7,46 @@ use std::path::Path;
 use shared::config::AppConfig;
 use shared::ipc::LearnedHost;
 use windows_sys::Win32::Security::Authorization::{ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1};
-use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+use windows_sys::Win32::Security::{DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SetFileSecurityW};
 use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
 
 use crate::{info, warn};
 
 const MAX_LEARNED: usize = 4000;
 
+/// SYSTEM ve Yoneticiler: tam; Kullanicilar: okuma.
+const DATA_SDDL: &str = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FR;;;BU)";
+/// Guncelleme klasoru ve paketi: Kullanicilar okur ve CALISTIRIR ama yazamaz. Paketi
+/// kullanicinin oturumundaki arayuz baslatir; okuma izni tek basina yetmez (Windows
+/// "erisim engellendi" der). 0x1200a9 = okuma + calistirma.
+const UPDATE_SDDL: &str = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)";
+const UPDATE_FILE_SDDL: &str = "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;BU)";
+
 /// Veri klasorunu yalnizca SYSTEM ve Yoneticilerin yazabilecegi izinlerle olusturur.
 pub fn ensure_data_dir() {
-    ensure_private_dir(&shared::paths::service_data_dir());
+    let dir = shared::paths::service_data_dir();
+    if !dir.exists() {
+        create_dir_with(&dir, DATA_SDDL);
+    }
 }
 
-/// Klasoru (yoksa) yalnizca SYSTEM ve Yoneticilerin yazabilecegi izinlerle olusturur;
-/// kullanicilar yalnizca okuyabilir. Guncelleme paketi de boyle bir klasorde durur.
-pub fn ensure_private_dir(dir: &Path) {
+/// Guncelleme klasorunu olusturur ya da izinlerini duzeltir (eski surumler klasoru
+/// calistirma izni olmadan olusturuyordu).
+pub fn ensure_update_dir(dir: &Path) {
     if dir.exists() {
-        return;
+        apply_sddl(dir, UPDATE_SDDL);
+    } else {
+        create_dir_with(dir, UPDATE_SDDL);
     }
-    // SYSTEM ve Yoneticiler: tam; Kullanicilar: okuma.
-    let sddl: Vec<u16> = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FR;;;BU)\0".encode_utf16().collect();
+}
+
+/// Indirilen paketin izinleri: kullanicilar calistirabilir, degistiremez.
+pub fn secure_update_file(path: &Path) -> bool {
+    apply_sddl(path, UPDATE_FILE_SDDL)
+}
+
+fn create_dir_with(dir: &Path, sddl: &str) {
+    let sddl: Vec<u16> = sddl.encode_utf16().chain(Some(0)).collect();
     let path: Vec<u16> = dir.as_os_str().encode_wide_null();
     unsafe {
         let mut sd = std::ptr::null_mut();
@@ -41,7 +61,22 @@ pub fn ensure_private_dir(dir: &Path) {
             windows_sys::Win32::Foundation::LocalFree(sd as _);
         }
     }
-    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::create_dir_all(dir);
+}
+
+/// Var olan dosya/klasorun DACL'ini korumali (ust klasorden miras almayan) olarak degistirir.
+pub fn apply_sddl(path: &Path, sddl: &str) -> bool {
+    let sddl: Vec<u16> = sddl.encode_utf16().chain(Some(0)).collect();
+    let p: Vec<u16> = path.as_os_str().encode_wide_null();
+    unsafe {
+        let mut sd = std::ptr::null_mut();
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) == 0 {
+            return false;
+        }
+        let ok = SetFileSecurityW(p.as_ptr(), DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, sd) != 0;
+        windows_sys::Win32::Foundation::LocalFree(sd as _);
+        ok
+    }
 }
 
 trait EncodeWideNull {
@@ -106,4 +141,55 @@ fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
         f.sync_all()?;
     }
     std::fs::rename(&tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn elevated() -> bool {
+        use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+        unsafe {
+            let mut token = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return true;
+            }
+            let mut e = TOKEN_ELEVATION { TokenIsElevated: 0 };
+            let mut len = 0u32;
+            let ok = GetTokenInformation(token, TokenElevation, &mut e as *mut _ as *mut _, size_of::<TOKEN_ELEVATION>() as u32, &mut len);
+            windows_sys::Win32::Foundation::CloseHandle(token);
+            ok == 0 || e.TokenIsElevated != 0
+        }
+    }
+
+    /// Guncelleme paketi standart kullanici yetkisiyle calistirilabilmeli (3.0.0'a kadar
+    /// klasor yalnizca okuma izni veriyordu ve Windows "erisim engellendi" diyordu).
+    #[test]
+    fn users_can_run_the_update_package() {
+        let root = std::env::temp_dir().join(format!("gdpi3-acl-{}", std::process::id()));
+        let dir = root.join("update");
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("probe.exe");
+        std::fs::copy(r"C:\Windows\System32\whoami.exe", &exe).unwrap();
+
+        assert!(apply_sddl(&dir, UPDATE_SDDL));
+        assert!(secure_update_file(&exe));
+        let run = || std::process::Command::new(&exe).output();
+        assert!(run().is_ok_and(|o| o.status.success()), "yeni izinlerle paket calismali");
+
+        // Eski izin (yalnizca okuma): standart kullanici calistiramaz. Yonetici olarak
+        // calisan testte (CI) bu karsilastirma anlamsiz oldugu icin atlanir.
+        assert!(apply_sddl(&exe, "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)"));
+        if !elevated() {
+            let err = run().expect_err("eski izinle calismamali");
+            assert_eq!(err.raw_os_error(), Some(5), "{err}");
+        }
+
+        // Temizlik: sahip olarak izni acip sil.
+        let open = "D:(A;OICI;FA;;;WD)";
+        apply_sddl(&exe, open);
+        apply_sddl(&dir, open);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

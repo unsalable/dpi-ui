@@ -108,9 +108,10 @@ pub fn check_and_download(current: &Version, beta: bool, progress: &mut dyn FnMu
     info!("Yeni sürüm bulundu: {} (şu an {current}).", candidate.version);
 
     let dir = shared::paths::update_dir();
-    crate::store::ensure_private_dir(&dir);
+    crate::store::ensure_update_dir(&dir);
     let installer = shared::paths::update_installer();
     if file_matches(&installer, &manifest) {
+        crate::store::secure_update_file(&installer);
         return Ok(ready(&candidate, &manifest));
     }
     let _ = std::fs::remove_file(&installer);
@@ -130,6 +131,9 @@ pub fn check_and_download(current: &Version, beta: bool, progress: &mut dyn FnMu
     let partial = installer.with_extension("partial");
     std::fs::write(&partial, &data).map_err(|e| format!("paket yazılamadı: {e}"))?;
     std::fs::rename(&partial, &installer).map_err(|e| format!("paket yerine konamadı: {e}"))?;
+    if !crate::store::secure_update_file(&installer) {
+        warn!("Güncelleme paketinin izinleri ayarlanamadı.");
+    }
     info!("Sürüm {} indirildi ve doğrulandı.", candidate.version);
     Ok(ready(&candidate, &manifest))
 }

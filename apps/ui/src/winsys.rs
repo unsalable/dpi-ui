@@ -286,7 +286,7 @@ pub fn window_running() -> bool {
 /// yeniden acilan uygulama yonetici olarak degil, kullanicinin kendi yetkisiyle calisir.
 /// `reopen`: "window" (pencere de acilir) ya da "tray".
 pub fn launch_update(expected_sha256: &str, reopen: &str) -> Result<(), String> {
-    use windows_sys::Win32::UI::Shell::{SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW};
+    use windows_sys::Win32::UI::Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW};
     let path = shared::paths::update_installer();
     let actual = sha256_file(&path).ok_or("Güncelleme paketi bulunamadı.")?;
     if !actual.eq_ignore_ascii_case(expected_sha256) {
@@ -296,12 +296,17 @@ pub fn launch_update(expected_sha256: &str, reopen: &str) -> Result<(), String> 
     let params = wide(&format!("/SILENT /SUPPRESSMSGBOXES /NORESTART /SP- /UPDATE={reopen}"));
     let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
     info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
-    info.fMask = SEE_MASK_NOASYNC;
+    // Windows'un kendi hata penceresi yerine uygulama bildirim gosterir.
+    info.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
     info.lpFile = file.as_ptr();
     info.lpParameters = params.as_ptr();
     info.nShow = SW_SHOWNORMAL;
     if unsafe { ShellExecuteExW(&mut info) } == 0 {
-        return Err(format!("Kurulum başlatılamadı (hata {}).", unsafe { GetLastError() }));
+        return Err(match unsafe { GetLastError() } {
+            5 => "Güncelleme paketi başlatılamadı (erişim engellendi). Yeni sürümü GitHub'dan bir kez elle kurun.".into(),
+            1223 => "Güncelleme ertelendi.".into(),
+            e => format!("Kurulum başlatılamadı (hata {e})."),
+        });
     }
     Ok(())
 }
