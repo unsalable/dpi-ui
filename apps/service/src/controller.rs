@@ -2,18 +2,22 @@
 //! Tum degisiklikler buradan gecer; arayuzler yalnizca istek gonderir.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine::{DnsMode, Processor, Redirect};
 use shared::config::{ActiveDns, AppConfig};
-use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, ServerMessage, StateSnapshot, StatsSnapshot};
+use shared::ipc::{Conflict, EngineState, EngineStatus, Event, LearnedHost, Request, Response, ServerMessage, StateSnapshot, StatsSnapshot};
 use shared::update::{UpdateState, UpdateStatus};
 
 use crate::engine_loop::{self, EngineMsg, RunningEngine};
 use crate::updater::{self, UiSession, Updater};
 use crate::{conflicts, error, info, scm, store, warn};
+
+/// Cakisan bir arac calistigi surece listenin yenilenme araligi (arac kapaninca uyari kalksin).
+const CONFLICT_POLL: Duration = Duration::from_secs(2);
 
 pub struct Controller {
     inner: Mutex<Inner>,
@@ -23,6 +27,8 @@ pub struct Controller {
     me: Weak<Controller>,
     updater: Updater,
     update: Mutex<UpdateStatus>,
+    /// Cakisma izleyicisi calisiyor mu (yalnizca liste doluyken calisir).
+    conflict_watch: AtomicBool,
 }
 
 struct Inner {
@@ -30,7 +36,7 @@ struct Inner {
     learned: Vec<LearnedHost>,
     engine: Option<RunningEngine>,
     status: EngineStatus,
-    conflicts: Vec<shared::ipc::Conflict>,
+    conflicts: Vec<Conflict>,
     subscribers: Vec<(u64, SyncSender<ServerMessage>)>,
     /// Bagli arayuz surecleri: (istemci, Windows oturumu, tepsi mi).
     ui_clients: Vec<(u64, u32, bool)>,
@@ -62,6 +68,7 @@ impl Controller {
             me: me.clone(),
             updater: Updater::new(),
             update: Mutex::new(UpdateStatus::default()),
+            conflict_watch: AtomicBool::new(false),
         });
         (ctrl, rx)
     }
@@ -137,7 +144,11 @@ impl Controller {
                 info!("İstemci bağlandı: {client} (protokol {protocol}).");
                 Response::Hello { service_version: shared::VERSION.into(), protocol: shared::ipc::PROTOCOL_VERSION }
             }
-            Request::GetState => Response::State { state: Box::new(self.snapshot()) },
+            Request::GetState => {
+                // Arayuz acilirken liste tazelenir: kapanmis arac icin eski uyari gorunmesin.
+                self.refresh_conflicts();
+                Response::State { state: Box::new(self.snapshot()) }
+            }
             Request::Subscribe => {
                 if let Some((id, tx)) = client {
                     let mut inner = self.inner.lock().unwrap();
@@ -312,13 +323,7 @@ impl Controller {
         let scope = inner.config.build_scope(inner.learned.iter().map(|h| h.host.clone()));
         let processor = Processor::new(method.config.clone(), dns_mode, scope);
 
-        inner.conflicts = conflicts::scan();
-        if !inner.conflicts.is_empty() {
-            let names: Vec<_> = inner.conflicts.iter().map(|c| c.process.as_str()).collect();
-            warn!("Çakışabilecek araçlar çalışıyor: {}", names.join(", "));
-            let conflicts = inner.conflicts.clone();
-            broadcast(inner, Event::Conflicts { conflicts });
-        }
+        self.set_conflicts(inner, conflicts::scan());
 
         inner.status = EngineStatus {
             state: EngineState::Starting,
@@ -401,6 +406,40 @@ impl Controller {
         }
     }
 
+    /// Cakisan araclari yeniden tarar.
+    pub fn refresh_conflicts(&self) {
+        let found = conflicts::scan();
+        let mut inner = self.inner.lock().unwrap();
+        self.set_conflicts(&mut inner, found);
+    }
+
+    /// Yeni cakisma listesini kaydeder, degistiyse duyurur; liste doluysa izleyiciyi baslatir.
+    fn set_conflicts(&self, inner: &mut Inner, found: Vec<Conflict>) {
+        apply_conflicts(inner, found);
+        if inner.conflicts.is_empty() || self.conflict_watch.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // Liste dolu oldugu surece izlenir: cakisan arac kapaninca uyari motor yeniden baslamadan
+        // kalkar. Bayrak kilit altinda birakilir; izleyici cikarken gelen yeni cakisma kacmaz.
+        let me = self.me.clone();
+        let spawned = std::thread::Builder::new().name("cakisma".into()).stack_size(64 * 1024).spawn(move || {
+            loop {
+                std::thread::sleep(CONFLICT_POLL);
+                let Some(ctrl) = me.upgrade() else { return };
+                let found = conflicts::scan();
+                let mut inner = ctrl.inner.lock().unwrap();
+                apply_conflicts(&mut inner, found);
+                if inner.conflicts.is_empty() {
+                    ctrl.conflict_watch.store(false, Ordering::SeqCst);
+                    return;
+                }
+            }
+        });
+        if spawned.is_err() {
+            self.conflict_watch.store(false, Ordering::SeqCst);
+        }
+    }
+
     /// Istemci ayrilinca aboneligini hemen sil (yazici is parcacigi beklemesin).
     pub fn unsubscribe(&self, id: u64) {
         let mut inner = self.inner.lock().unwrap();
@@ -417,8 +456,68 @@ impl Controller {
     }
 }
 
+/// Liste degistiyse kaydeder, gunluge yazar ve abonelere duyurur.
+fn apply_conflicts(inner: &mut Inner, found: Vec<Conflict>) {
+    if found == inner.conflicts {
+        return;
+    }
+    if found.is_empty() {
+        info!("Çakışan araç kapandı; uyarı kaldırıldı.");
+    } else {
+        let names: Vec<_> = found.iter().map(|c| c.process.as_str()).collect();
+        warn!("Çakışabilecek araçlar çalışıyor: {}", names.join(", "));
+    }
+    inner.conflicts = found;
+    let conflicts = inner.conflicts.clone();
+    broadcast(inner, Event::Conflicts { conflicts });
+}
+
 fn broadcast(inner: &mut Inner, event: Event) {
     let msg = ServerMessage::Event { event };
     // Yavas ya da kopmus istemci denetleyiciyi bekletmesin: kuyruk doluysa atilir.
     inner.subscribers.retain(|(_, s)| !matches!(s.try_send(msg.clone()), Err(TrySendError::Disconnected(_))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    /// Eski surum kapaninca "iki DPI araci" uyarisi motor yeniden baslamadan kalkar. Gercek bir
+    /// surec kullanilir: ping.exe "goodbyedpi-ui.exe" adiyla calistirilip sonra kapatilir.
+    #[test]
+    fn conflict_warning_clears_when_tool_exits() {
+        let dir = std::env::temp_dir().join(format!("gdpi3-cakisma-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("goodbyedpi-ui.exe");
+        std::fs::copy(r"C:\Windows\System32\PING.EXE", &fake).unwrap();
+        let mut child = std::process::Command::new(&fake)
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+
+        let (ctrl, _rx) = Controller::new(dir.clone(), false);
+        let (tx, rx) = std::sync::mpsc::sync_channel(64);
+        ctrl.handle(Request::Subscribe, Some((1, &tx)));
+        let Response::State { state } = ctrl.handle(Request::GetState, None) else { panic!("durum gelmedi") };
+        assert!(state.conflicts.iter().any(|c| c.pid == pid), "calisan arac uyarida olmali: {:?}", state.conflicts);
+
+        let _ = child.kill();
+        let _ = child.wait();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut cleared = false;
+        while let Ok(msg) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            if let ServerMessage::Event { event: Event::Conflicts { conflicts } } = msg {
+                if conflicts.iter().all(|c| c.pid != pid) {
+                    cleared = true;
+                    break;
+                }
+            }
+        }
+        assert!(cleared, "arac kapaninca bos liste duyurulmali");
+        assert!(ctrl.snapshot().conflicts.iter().all(|c| c.pid != pid));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
