@@ -771,7 +771,7 @@ export component GeneralPage inherits SubPage {
         ToggleRow {
             last: true;
             title: "Ön sürümleri de al";
-            subtitle: "Beta ve test sürümleri, kararlı sürümden önce gelir.";
+            subtitle: "Beta ve test sürümleri de gelir.";
             checked: AppState.beta-updates;
             toggled(v) => {
                 AppState.set-beta-updates(v);
