@@ -43,7 +43,7 @@ fn main() {
     res.set("ProductName", "GoodbyeDPI UI 3");
     res.set("FileDescription", "GoodbyeDPI UI 3");
     res.set("CompanyName", "GoodbyeDPI UI");
-    res.set("LegalCopyright", "GPL-3.0");
+    res.set("LegalCopyright", "MIT");
     res.set("OriginalFilename", "GoodbyeDPI3.exe");
     if let Err(e) = res.compile() {
         println!("cargo:warning=Windows kaynaklari derlenemedi: {e}");

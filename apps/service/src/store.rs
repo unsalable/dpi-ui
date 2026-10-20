@@ -16,7 +16,12 @@ const MAX_LEARNED: usize = 4000;
 
 /// Veri klasorunu yalnizca SYSTEM ve Yoneticilerin yazabilecegi izinlerle olusturur.
 pub fn ensure_data_dir() {
-    let dir = shared::paths::service_data_dir();
+    ensure_private_dir(&shared::paths::service_data_dir());
+}
+
+/// Klasoru (yoksa) yalnizca SYSTEM ve Yoneticilerin yazabilecegi izinlerle olusturur;
+/// kullanicilar yalnizca okuyabilir. Guncelleme paketi de boyle bir klasorde durur.
+pub fn ensure_private_dir(dir: &Path) {
     if dir.exists() {
         return;
     }

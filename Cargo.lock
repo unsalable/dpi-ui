@@ -1389,6 +1389,7 @@ name = "goodbyedpi3-service"
 version = "3.0.0-alpha.1"
 dependencies = [
  "engine",
+ "ring",
  "rustls",
  "serde",
  "serde_json",
@@ -3383,6 +3384,15 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "release-tool"
+version = "3.0.0-alpha.1"
+dependencies = [
+ "ring",
+ "serde_json",
+ "shared",
+]
 
 [[package]]
 name = "renderdoc-sys"

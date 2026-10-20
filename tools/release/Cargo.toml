@@ -1,0 +1,16 @@
+[package]
+name = "release-tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Surum imzalama araci (dagitilmaz): anahtar uretir, update.json'u imzalar ve dogrular"
+
+[[bin]]
+name = "release-tool"
+path = "src/main.rs"
+
+[dependencies]
+shared = { path = "../../crates/shared" }
+ring = "0.17.14"
+serde_json = "1"

@@ -22,7 +22,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
-AppSupportURL=https://github.com/unsalable/goodbyedpi-ui-3
+AppSupportURL=https://github.com/unsalable/dpi-ui
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -42,6 +42,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 CloseApplications=yes
+; Pencere ve tepsi ayni guncellemeyi baslatirsa ikinci kurulum calismaz.
+SetupMutex=GoodbyeDPI3Setup
 RestartApplications=no
 VersionInfoVersion=3.0.0.0
 VersionInfoProductName={#AppName}
@@ -81,6 +83,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\{#ServiceExe}"; Parameters: "--install"; Flags: runhidden waituntilterminated; StatusMsg: "Motor hizmeti kuruluyor..."
 Filename: "{sys}\net.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated; StatusMsg: "Motor başlatılıyor..."
 Filename: "{app}\{#AppExe}"; Description: "{cm:Launch}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+; Uygulamanin baslattigi guncelleme (/UPDATE=window|tray): bitince kullanicinin kendi yetkisiyle yeniden acilir.
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsUpdate('window')
+Filename: "{app}\{#AppExe}"; Parameters: "--tray"; Flags: nowait runasoriginaluser; Check: IsUpdate('tray')
 
 [UninstallRun]
 ; Once duzgun kapat (tepsi simgesi temizlenir), kalan olursa zorla kapat.
@@ -102,6 +107,11 @@ begin
     Result := S
   else if RegQueryStringValue(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#V1AppId}', 'UninstallString', S) then
     Result := S;
+end;
+
+function IsUpdate(Kind: String): Boolean;
+begin
+  Result := CompareText(ExpandConstant('{param:UPDATE|}'), Kind) = 0;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

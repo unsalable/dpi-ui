@@ -15,6 +15,9 @@ New-Item -ItemType Directory -Force "$app\licenses" | Out-Null
 Copy-Item "target\release\GoodbyeDPI3.exe", "target\release\GoodbyeDPI3-Service.exe" $app
 Copy-Item "third_party\windivert\2.2\WinDivert.dll", "third_party\windivert\2.2\WinDivert64.sys" $app
 Copy-Item "third_party\windivert\2.2\LICENSE.txt" "$app\licenses\WinDivert-LICENSE.txt"
+Copy-Item "LICENSE" "$app\licenses\GoodbyeDPI-UI-3-LICENSE.txt"
+Copy-Item "THIRD_PARTY_NOTICES.md" "$app\licenses\THIRD_PARTY_NOTICES.md"
+Copy-Item "third_party\licenses\*" "$app\licenses\"
 
 # Kurulum simgesi, uygulamanin kodla cizilen isaretinden uretilir.
 $p = Start-Process -FilePath "$app\GoodbyeDPI3.exe" -ArgumentList "--write-icon", "build\app.ico" -PassThru -Wait

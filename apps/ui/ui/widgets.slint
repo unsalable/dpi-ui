@@ -553,6 +553,46 @@ export component ItemRow inherits RowBase {
     }
 }
 
+/// Baslik + deger; istege bagli bir baglanti (sagda dis baglanti simgesi).
+export component ValueRow inherits RowBase {
+    in property <string> title;
+    in property <string> value;
+    in property <bool> link: false;
+    interactive: root.link;
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-description: root.value;
+
+    Text {
+        text: root.title;
+        color: Theme.label;
+        font-size: Type.body;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+
+    Text {
+        text: root.value;
+        color: Theme.secondary;
+        font-size: Type.body;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        overflow: elide;
+        max-width: 200px;
+    }
+
+    if root.link: VerticalLayout {
+        alignment: center;
+        Icon {
+            commands: Icons.line-external;
+            width: 15px;
+            height: 15px;
+            weight: 1.9px;
+            tint: Theme.tertiary;
+        }
+    }
+}
+
 /// Bos liste satiri.
 export component EmptyRow inherits RowBase {
     in property <string> text;

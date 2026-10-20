@@ -81,6 +81,13 @@ export global AppState {
     in-out property <int> theme-index;
     in-out property <string> version;
 
+    // ---------------------------------------------------------------- guncelleme
+    in-out property <string> update-text: "Henüz denetlenmedi";
+    in-out property <bool> update-ready;
+    in-out property <bool> update-busy;
+    in-out property <bool> auto-update: true;
+    in-out property <bool> beta-updates;
+
     // ---------------------------------------------------------------- bildirim
     in-out property <string> toast;
     in-out property <bool> toast-error;
@@ -109,6 +116,10 @@ export global AppState {
     callback forget-learned(string);
     callback clear-learned();
     callback set-start-with-windows(bool);
+    callback set-auto-update(bool);
+    callback set-beta-updates(bool);
+    callback check-update();
+    callback install-update();
     callback set-auto-connect(bool);
     callback set-tray-at-login(bool);
     callback set-close-to-tray(bool);

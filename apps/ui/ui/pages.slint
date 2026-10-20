@@ -4,7 +4,7 @@ import { Theme, Type, Metrics, Motion, Curves } from "tokens.slint";
 import { Icons } from "icons.slint";
 import { ConnectGlyph, PowerState } from "connect.slint";
 import { Icon, Tile, Segmented, GlyphButton } from "components.slint";
-import { Page, NavBar, Group, NavRow, ToggleRow, CheckRow, PickerRow, ActionRow, FieldRow, ItemRow, EmptyRow } from "widgets.slint";
+import { Page, NavBar, Group, NavRow, ToggleRow, CheckRow, PickerRow, ActionRow, FieldRow, ItemRow, EmptyRow, ValueRow } from "widgets.slint";
 import { AppState, HostItem } from "state.slint";
 
 // ================================================================== ana ekran
@@ -755,6 +755,31 @@ export component GeneralPage inherits SubPage {
     }
 
     Group {
+        header: "GÜNCELLEMELER";
+        footer: AppState.auto-update
+            ? "Yeni sürüm GitHub'dan indirilir ve imzası doğrulanınca kurulum kendiliğinden başlar; Windows bir kez yönetici onayı ister."
+            : "Yeni sürüm indirilip doğrulanır; kurulumu Hakkında sayfasından sen başlatırsın.";
+        ToggleRow {
+            first: true;
+            title: "Güncellemeleri otomatik yükle";
+            checked: AppState.auto-update;
+            toggled(v) => {
+                AppState.set-auto-update(v);
+            }
+        }
+
+        ToggleRow {
+            last: true;
+            title: "Ön sürümleri de al";
+            subtitle: "Beta ve test sürümleri, kararlı sürümden önce gelir.";
+            checked: AppState.beta-updates;
+            toggled(v) => {
+                AppState.set-beta-updates(v);
+            }
+        }
+    }
+
+    Group {
         header: "SORUN GİDERME";
         footer: "Motorun son kayıtlarını gösterir; bir sorun bildirirken işe yarar.";
         ActionRow {
@@ -1004,6 +1029,41 @@ export component AboutPage inherits SubPage {
                 color: Theme.secondary;
                 font-size: Type.callout;
                 horizontal-alignment: center;
+            }
+        }
+    }
+
+    Group {
+        ValueRow {
+            first: true;
+            title: "Güncellemeler";
+            value: AppState.update-text;
+        }
+
+        ActionRow {
+            last: true;
+            text: AppState.update-ready ? "Şimdi yükle" : "Şimdi denetle";
+            busy: AppState.update-busy;
+            activated => {
+                if (AppState.update-ready) {
+                    AppState.install-update();
+                } else {
+                    AppState.check-update();
+                }
+            }
+        }
+    }
+
+    Group {
+        footer: "MIT lisanslı açık kaynak yazılım.";
+        ValueRow {
+            first: true;
+            last: true;
+            title: "Kaynak kodu";
+            value: "GitHub";
+            link: true;
+            clicked => {
+                AppState.open-url("https://github.com/unsalable/dpi-ui");
             }
         }
     }

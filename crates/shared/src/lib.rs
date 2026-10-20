@@ -6,6 +6,7 @@ pub mod ipc;
 pub mod migrate;
 pub mod paths;
 pub mod pipeio;
+pub mod update;
 
 pub const PRODUCT_NAME: &str = "GoodbyeDPI UI 3";
 pub const SERVICE_NAME: &str = "GoodbyeDPI3";

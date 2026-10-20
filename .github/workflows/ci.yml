@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Arayuz testleri Windows 11'in Segoe UI Variable yazi tipine gore yerlesim olcer; CI
+      # imajinda bu yazi tipi olmayabilir, o yuzden arayuz burada yalnizca derlenir.
+      - name: Testler (motor, servis, ortak)
+        run: cargo test --workspace --exclude goodbyedpi3-ui
+      - name: Arayuz derlemesi
+        run: cargo build -p goodbyedpi3-ui

@@ -7,7 +7,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use engine::presets;
-use shared::config::{AppConfig, CustomDns, CustomDnsKind, DnsMode};
+use shared::config::{AppConfig, CustomDns, CustomDnsKind, DnsMode, UpdateChannel, UpdateMode};
+use shared::update::{UpdateState, UpdateStatus};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, StateSnapshot};
 use slint::winit_030::{WinitWindowAccessor, winit};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
@@ -39,6 +40,11 @@ struct Ctx {
     /// Kapanma basladi (solma suruyor).
     closing: Cell<bool>,
     fade: RefCell<Option<Rc<Timer>>>,
+    update: RefCell<UpdateStatus>,
+    /// Bu oturumda guncelleme kurulumu baslatildi mi (iki kez sorulmasin).
+    update_launched: Cell<bool>,
+    /// Kullanici "simdi denetle" dedi: hata olursa bildirim gosterilir.
+    update_requested: Cell<bool>,
     /// GDPI3_TEST: gercek oturum acilisi kaydina, tepsiye ve v1 gocune dokunma.
     test_mode: bool,
 }
@@ -89,6 +95,9 @@ impl Ctx {
             pending_connect: Cell::new(None),
             closing: Cell::new(false),
             fade: RefCell::new(None),
+            update: RefCell::new(UpdateStatus::default()),
+            update_launched: Cell::new(false),
+            update_requested: Cell::new(false),
             test_mode,
         }
     }
@@ -154,6 +163,18 @@ impl Ctx {
                     *self.conflicts.borrow_mut() = conflicts;
                     self.apply_engine();
                 }
+                Event::Update { status } => {
+                    let failed_now = matches!(status.state, UpdateState::Failed { .. })
+                        && !matches!(self.update.borrow().state, UpdateState::Failed { .. });
+                    *self.update.borrow_mut() = status;
+                    self.apply_update();
+                    if failed_now && self.update_requested.get() {
+                        if let UpdateState::Failed { message } = &self.update.borrow().state {
+                            self.toast(&format!("Güncelleme denetlenemedi: {message}"), true);
+                        }
+                    }
+                    self.maybe_install();
+                }
             },
         }
     }
@@ -167,10 +188,61 @@ impl Ctx {
             app.global::<AppState>().set_version(s(state.service_version.as_str()));
         }
         let fresh = state.config == AppConfig::default().sanitized();
+        *self.update.borrow_mut() = state.update;
         self.apply_config(state.config);
         self.apply_learned();
         self.apply_engine();
+        self.apply_update();
         self.first_run_tasks(fresh);
+        // Uygulama acilinca ilk is guncellemeyi denetlemek (servis yakin zamanda baktiysa aga cikmaz).
+        if let Some(client) = self.client() {
+            client.send(Request::CheckUpdate { forced: false });
+        }
+        self.maybe_install();
+    }
+
+    fn apply_update(&self) {
+        let Some(app) = self.ui() else { return };
+        let st = app.global::<AppState>();
+        let u = self.update.borrow();
+        let (text, ready, busy) = match &u.state {
+            UpdateState::Idle => ("Henüz denetlenmedi".to_owned(), false, false),
+            UpdateState::Checking => ("Denetleniyor…".to_owned(), false, true),
+            UpdateState::UpToDate => ("Güncel".to_owned(), false, false),
+            UpdateState::Downloading { version, percent } => (format!("{version} indiriliyor · %{percent}"), false, true),
+            UpdateState::Ready { version, .. } if self.update_launched.get() => (format!("{version} yükleniyor…"), false, true),
+            UpdateState::Ready { version, .. } => (format!("{version} hazır"), true, false),
+            UpdateState::Failed { .. } => ("Denetlenemedi".to_owned(), false, false),
+        };
+        st.set_update_text(s(text));
+        st.set_update_ready(ready);
+        st.set_update_busy(busy);
+    }
+
+    /// "Otomatik yukle" aciksa dogrulanmis paketin kurulumunu baslatir (oturumda bir kez).
+    fn maybe_install(&self) {
+        let auto = self.config.borrow().as_ref().is_some_and(|c| c.updates == UpdateMode::Auto);
+        if auto && !self.test_mode {
+            self.install_update(false);
+        }
+    }
+
+    fn install_update(&self, _by_user: bool) {
+        let UpdateState::Ready { version, sha256, .. } = self.update.borrow().state.clone() else { return };
+        if self.update_launched.get() {
+            return;
+        }
+        self.update_launched.set(true);
+        match winsys::launch_update(&sha256, "window") {
+            Ok(()) => {
+                self.toast(&format!("Sürüm {version} yükleniyor. Windows onay isteyebilir."), false);
+            }
+            Err(e) => {
+                self.update_launched.set(false);
+                self.toast(&e, true);
+            }
+        }
+        self.apply_update();
     }
 
     fn apply_engine(&self) {
@@ -347,6 +419,8 @@ impl Ctx {
         // Genel.
         st.set_start_with_windows(cfg.start_with_windows);
         st.set_auto_connect(cfg.auto_connect);
+        st.set_auto_update(cfg.updates == UpdateMode::Auto);
+        st.set_beta_updates(cfg.update_channel == UpdateChannel::Beta);
         st.set_method_name(s(cfg.active_method().name));
         st.set_dns_name(s(cfg.active_dns().display_name()));
 
@@ -928,6 +1002,19 @@ fn bind_callbacks(app: &AppWindow) {
         })
     });
     st.on_set_start_with_windows(|v| with_ctx(|c| c.edit(|cfg| cfg.start_with_windows = v)));
+    st.on_set_auto_update(|v| with_ctx(|c| c.edit(|cfg| cfg.updates = if v { UpdateMode::Auto } else { UpdateMode::Notify })));
+    st.on_set_beta_updates(|v| with_ctx(|c| c.edit(|cfg| cfg.update_channel = if v { UpdateChannel::Beta } else { UpdateChannel::Stable })));
+    st.on_check_update(|| {
+        with_ctx(|c| {
+            let Some(client) = c.client() else {
+                c.toast("Motor hizmetine bağlı değil.", true);
+                return;
+            };
+            c.update_requested.set(true);
+            client.send(Request::CheckUpdate { forced: true });
+        })
+    });
+    st.on_install_update(|| with_ctx(|c| c.install_update(true)));
     st.on_set_auto_connect(|v| with_ctx(|c| c.edit(|cfg| cfg.auto_connect = v)));
     st.on_set_tray_at_login(|v| {
         with_ctx(|c| {

@@ -10,6 +10,7 @@ use std::io::{self, BufRead, Write};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
+use crate::update::UpdateStatus;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\GoodbyeDPI3";
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -32,6 +33,9 @@ pub enum Request {
     GetLogs,
     /// Hazir sifreli DNS saglayicilarinin bu hattaki hizini olc (1-3 sn surer).
     BenchDns,
+    /// Guncellemeyi denetle. `forced` degilse yakin zamanda denetlendiyse aga cikilmaz.
+    /// Sonuc `Event::Update` olarak gelir.
+    CheckUpdate { forced: bool },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +113,8 @@ pub struct StateSnapshot {
     pub config: AppConfig,
     pub learned: Vec<LearnedHost>,
     pub conflicts: Vec<Conflict>,
+    #[serde(default)]
+    pub update: UpdateStatus,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -130,6 +136,7 @@ pub enum Event {
     Config { config: Box<AppConfig> },
     Learned { host: LearnedHost },
     Conflicts { conflicts: Vec<Conflict> },
+    Update { status: UpdateStatus },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

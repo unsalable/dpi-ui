@@ -22,6 +22,15 @@ pub fn learned_file() -> PathBuf {
     service_data_dir().join("learned.json")
 }
 
+/// Indirilen guncelleme: yalnizca servis (SYSTEM) yazar, kullanicilar okuyabilir.
+pub fn update_dir() -> PathBuf {
+    service_data_dir().join("update")
+}
+
+pub fn update_installer() -> PathBuf {
+    update_dir().join(crate::update::INSTALLER_NAME)
+}
+
 pub fn log_dir() -> PathBuf {
     service_data_dir().join("logs")
 }

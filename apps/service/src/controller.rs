@@ -3,14 +3,16 @@
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use engine::{DnsMode, Processor, Redirect};
 use shared::config::{ActiveDns, AppConfig};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, ServerMessage, StateSnapshot, StatsSnapshot};
+use shared::update::{UpdateState, UpdateStatus};
 
 use crate::engine_loop::{self, EngineMsg, RunningEngine};
+use crate::updater::{self, Updater};
 use crate::{conflicts, error, info, scm, store, warn};
 
 pub struct Controller {
@@ -18,6 +20,9 @@ pub struct Controller {
     tx: Sender<EngineMsg>,
     exe_dir: PathBuf,
     as_service: bool,
+    me: Weak<Controller>,
+    updater: Updater,
+    update: Mutex<UpdateStatus>,
 }
 
 struct Inner {
@@ -39,11 +44,14 @@ impl Controller {
         let config = store::load_config();
         let learned = store::load_learned();
         let status = EngineStatus { method_name: config.active_method().name, dns_name: config.active_dns().display_name(), ..Default::default() };
-        let ctrl = Arc::new(Self {
+        let ctrl = Arc::new_cyclic(|me| Self {
             inner: Mutex::new(Inner { config, learned, engine: None, status, conflicts: Vec::new(), subscribers: Vec::new() }),
             tx,
             exe_dir,
             as_service,
+            me: me.clone(),
+            updater: Updater::new(),
+            update: Mutex::new(UpdateStatus::default()),
         });
         (ctrl, rx)
     }
@@ -151,6 +159,12 @@ impl Controller {
                 Response::Ok
             }
             Request::GetLogs => Response::Logs { lines: crate::log::lines() },
+            Request::CheckUpdate { forced } => {
+                if let Some(me) = self.me.upgrade() {
+                    updater::request_check(&me, forced);
+                }
+                Response::Ok
+            }
             Request::BenchDns => Response::DnsBench {
                 results: crate::dns::bench::run_all()
                     .into_iter()
@@ -175,7 +189,33 @@ impl Controller {
             config: inner.config.clone(),
             learned: inner.learned.clone(),
             conflicts: inner.conflicts.clone(),
+            update: self.update_status(),
         }
+    }
+
+    pub fn updater(&self) -> &Updater {
+        &self.updater
+    }
+
+    pub fn update_status(&self) -> UpdateStatus {
+        self.update.lock().unwrap().clone()
+    }
+
+    /// Guncelleme durumunu kaydeder ve abonelere duyurur. `finished`: denetim tamamlandi.
+    pub fn set_update(&self, state: UpdateState, finished: bool) {
+        let status = {
+            let mut u = self.update.lock().unwrap();
+            if finished && !matches!(state, UpdateState::Failed { .. }) {
+                u.checked_at_ms = Some(now_ms());
+            }
+            if let UpdateState::Ready { version, .. } = &state {
+                updater::remember_ready(version);
+            }
+            u.state = state;
+            u.clone()
+        };
+        let mut inner = self.inner.lock().unwrap();
+        broadcast(&mut inner, Event::Update { status });
     }
 
     fn stats(&self) -> StatsSnapshot {

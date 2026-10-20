@@ -10,11 +10,13 @@ mod conflicts;
 mod controller;
 mod dns;
 mod engine_loop;
+mod https;
 mod log;
 mod pipe;
 mod probe;
 mod scm;
 mod store;
+mod updater;
 
 use std::ffi::OsString;
 use std::sync::Arc;
@@ -44,6 +46,7 @@ impl App {
         if ctrl.config().auto_connect {
             let _ = ctrl.connect();
         }
+        updater::spawn_schedule(&ctrl);
         let pipe = pipe::start(ctrl.clone());
         App { ctrl, pipe }
     }
@@ -163,6 +166,32 @@ fn main() {
             );
         }
         0
+    } else if has("--check-update") {
+        // Yonetici gerekmez: denetler, indirir ve dogrular, kurmaz. Test icin --as-version ile
+        // eski bir surumdeymis gibi davranilabilir; GDPI3_DATA_DIR indirme yerini degistirir.
+        let current = args
+            .iter()
+            .position(|a| a == "--as-version")
+            .and_then(|i| args.get(i + 1))
+            .map_or(shared::VERSION, String::as_str);
+        let Some(current) = shared::update::Version::parse(current) else {
+            eprintln!("sürüm biçimi geçersiz");
+            std::process::exit(2);
+        };
+        println!("Şu anki sürüm: {current}");
+        match updater::check_and_download(&current, has("--beta"), &mut |s| println!("  {s:?}")) {
+            Ok(state) => {
+                println!("Sonuç: {state:?}");
+                if matches!(state, shared::update::UpdateState::Ready { .. }) {
+                    println!("Paket: {}", shared::paths::update_installer().display());
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("Hata: {e}");
+                1
+            }
+        }
     } else if has("--uninstall") {
         match scm::uninstall() {
             Ok(()) => {
@@ -176,7 +205,7 @@ fn main() {
         }
     } else {
         println!(
-            "{} motoru {}\n\n  --console     on planda calistir (yonetici)\n  --probe       canli test: siteleri motor kapali/acik dener (yonetici) [--method kimlik]\n  --dns-bench   sifreli DNS saglayicilarini olc\n  --install     hizmeti kur [--manual]\n  --uninstall   hizmeti kaldir",
+            "{} motoru {}\n\n  --console     on planda calistir (yonetici)\n  --probe       canli test: siteleri motor kapali/acik dener (yonetici) [--method kimlik]\n  --dns-bench   sifreli DNS saglayicilarini olc\n  --check-update  guncellemeyi denetle, indir, dogrula; kurmaz [--as-version 3.0.0] [--beta]\n  --install     hizmeti kur [--manual]\n  --uninstall   hizmeti kaldir",
             shared::PRODUCT_NAME,
             shared::VERSION
         );

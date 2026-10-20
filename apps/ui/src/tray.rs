@@ -5,7 +5,9 @@
 
 use std::sync::{Mutex, OnceLock};
 
+use shared::config::UpdateMode;
 use shared::ipc::{EngineState, Event, Request};
+use shared::update::{UpdateState, UpdateStatus};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
@@ -36,6 +38,9 @@ struct Tray {
     view: View,
     client: Option<Client>,
     taskbar_created: u32,
+    update: UpdateStatus,
+    auto_update: bool,
+    update_launched: bool,
 }
 
 static TRAY: OnceLock<Mutex<Tray>> = OnceLock::new();
@@ -107,6 +112,24 @@ fn open_window() {
     }
 }
 
+/// Bilgisayar acilisinda pencere yoktur: dogrulanmis guncelleme hazirsa kurulumu tepsi baslatir.
+/// Pencere aciksa isi pencere yapar (ayni kurulum iki kez sorulmasin).
+fn maybe_install_update() {
+    let sha256 = {
+        let mut t = tray();
+        let UpdateState::Ready { sha256, .. } = &t.update.state else { return };
+        let sha256 = sha256.clone();
+        if !t.auto_update || t.update_launched || winsys::window_running() || std::env::var_os("GDPI3_TEST").is_some() {
+            return;
+        }
+        t.update_launched = true;
+        sha256
+    };
+    if winsys::launch_update(&sha256, "tray").is_err() {
+        tray().update_launched = false;
+    }
+}
+
 /// Menunun temasi: uygulamada secilen tema; "sistem" ise gorev cubugunun temasi.
 fn menu_is_dark() -> bool {
     match crate::prefs::load().theme {
@@ -161,6 +184,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_STATE => {
             update_icon(false);
+            maybe_install_update();
             if traymenu::is_open() {
                 let v = tray().view.clone();
                 traymenu::update(&v);
@@ -210,7 +234,16 @@ pub fn run() -> i32 {
             winsys::make_icon(size, Mark::Error) as usize,
         ];
         let taskbar_created = RegisterWindowMessageW(wide("TaskbarCreated").as_ptr());
-        let _ = TRAY.set(Mutex::new(Tray { hwnd: hwnd as usize, icons, view: View::default(), client: None, taskbar_created }));
+        let _ = TRAY.set(Mutex::new(Tray {
+            hwnd: hwnd as usize,
+            icons,
+            view: View::default(),
+            client: None,
+            taskbar_created,
+            update: UpdateStatus::default(),
+            auto_update: true,
+            update_launched: false,
+        }));
         update_icon(true);
 
         let hwnd_val = hwnd as usize;
@@ -219,6 +252,8 @@ pub fn run() -> i32 {
                 let mut t = tray();
                 match inc {
                     Incoming::Connected(state) => {
+                        t.update = state.update.clone();
+                        t.auto_update = state.config.updates == UpdateMode::Auto;
                         t.view = View {
                             connected: true,
                             state: state.engine.state,
@@ -234,6 +269,8 @@ pub fn run() -> i32 {
                         t.view.dns = status.dns_name;
                         t.view.message = status.message;
                     }
+                    Incoming::Event(Event::Config { config }) => t.auto_update = config.updates == UpdateMode::Auto,
+                    Incoming::Event(Event::Update { status }) => t.update = status,
                     Incoming::Event(_) => return,
                 }
             }
