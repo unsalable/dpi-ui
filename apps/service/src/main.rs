@@ -8,9 +8,11 @@
 
 mod conflicts;
 mod controller;
+mod dns;
 mod engine_loop;
 mod log;
 mod pipe;
+mod probe;
 mod scm;
 mod store;
 
@@ -143,6 +145,24 @@ fn main() {
                 1
             }
         }
+    } else if has("--probe") {
+        let method = args.iter().position(|a| a == "--method").and_then(|i| args.get(i + 1)).map(String::as_str);
+        log::init(true, None);
+        probe::run(method)
+    } else if has("--dns-bench") {
+        for r in dns::bench::run_all() {
+            let ms = |v: Option<u32>| v.map_or("-".to_owned(), |m| format!("{m} ms"));
+            println!(
+                "{:<16} {}/{}  ilk {:>7}  medyan {:>7}  {}",
+                r.name,
+                r.ok,
+                r.total,
+                ms(r.first_ms),
+                ms(r.median_ms),
+                r.error.unwrap_or_default()
+            );
+        }
+        0
     } else if has("--uninstall") {
         match scm::uninstall() {
             Ok(()) => {
@@ -156,7 +176,7 @@ fn main() {
         }
     } else {
         println!(
-            "{} motoru {}\n\n  --console     on planda calistir (yonetici)\n  --install     hizmeti kur [--manual]\n  --uninstall   hizmeti kaldir",
+            "{} motoru {}\n\n  --console     on planda calistir (yonetici)\n  --probe       canli test: siteleri motor kapali/acik dener (yonetici) [--method kimlik]\n  --dns-bench   sifreli DNS saglayicilarini olc\n  --install     hizmeti kur [--manual]\n  --uninstall   hizmeti kaldir",
             shared::PRODUCT_NAME,
             shared::VERSION
         );

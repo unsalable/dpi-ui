@@ -14,9 +14,14 @@ shared = { path = "../../crates/shared" }
 windivert = { path = "../../crates/windivert" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1.0.10"
 windows-service = "0.8.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",

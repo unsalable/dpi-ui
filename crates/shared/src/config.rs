@@ -115,7 +115,7 @@ pub enum CustomDnsKind {
     /// Duz UDP: IPv4/IPv6 adres + port.
     #[default]
     Udp,
-    /// DNS over HTTPS: URL + baslangic IP'leri.
+    /// Sifreli: `https://` (DoH) ya da `tls://` (DoT) adresi + baslangic IP'leri.
     Doh,
 }
 
@@ -154,7 +154,7 @@ impl CustomDns {
             CustomDnsKind::Doh => {
                 let url = self.doh_url.trim();
                 if dns::url_host(url).is_none() {
-                    return Err("DoH adresi https:// ile başlamalı (örn. https://dns.ornek.com/dns-query).".into());
+                    return Err("Adres https:// (DoH) ya da tls:// (DoT) ile başlamalı (örn. https://dns.ornek.com/dns-query).".into());
                 }
                 let ips = self.bootstrap_ips();
                 if ips.is_empty() {

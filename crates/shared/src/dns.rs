@@ -7,7 +7,7 @@ pub struct DnsPreset {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
-    /// Bos degilse DoH desteklenir.
+    /// Sifreli DNS adresi: `https://...` (DoH) ya da `tls://host` (DoT). Bos degilse desteklenir.
     pub doh_url: &'static str,
     pub bootstrap_v4: &'static [&'static str],
     pub bootstrap_v6: &'static [&'static str],
@@ -56,7 +56,7 @@ pub const PRESETS: &[DnsPreset] = &[
         id: "quad9",
         name: "Quad9",
         description: "Zararlı alan adlarını engeller.",
-        doh_url: "https://dns.quad9.net/dns-query",
+        doh_url: "tls://dns.quad9.net",
         bootstrap_v4: &["9.9.9.9", "149.112.112.112"],
         bootstrap_v6: &["2620:fe::fe", "2620:fe::9"],
         udp_v4: Some(("9.9.9.9", 53)),
@@ -76,7 +76,7 @@ pub const PRESETS: &[DnsPreset] = &[
         id: "yandex",
         name: "Yandex",
         description: "Standart dışı 1253 portu ISS yönlendirmesini aşar.",
-        doh_url: "https://common.dot.dns.yandex.net/dns-query",
+        doh_url: "tls://common.dot.dns.yandex.net",
         bootstrap_v4: &["77.88.8.8", "77.88.8.1"],
         bootstrap_v6: &["2a02:6b8::feed:0ff"],
         udp_v4: Some(("77.88.8.8", 1253)),
@@ -106,7 +106,7 @@ pub const PRESETS: &[DnsPreset] = &[
         id: "mullvad",
         name: "Mullvad",
         description: "Kayıt tutmayan, gizlilik odaklı.",
-        doh_url: "https://dns.mullvad.net/dns-query",
+        doh_url: "tls://dns.mullvad.net",
         bootstrap_v4: &["194.242.2.2"],
         bootstrap_v6: &["2a07:e340::2"],
         udp_v4: None,
@@ -118,9 +118,9 @@ pub fn preset(id: &str) -> Option<&'static DnsPreset> {
     PRESETS.iter().find(|p| p.id.eq_ignore_ascii_case(id))
 }
 
-/// `https://host[:port]/yol` icinden host'u cikarir.
+/// `https://host[:port]/yol` ya da `tls://host[:port]` icinden host'u cikarir.
 pub fn url_host(url: &str) -> Option<&str> {
-    let rest = url.strip_prefix("https://")?;
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("tls://"))?;
     let authority = rest.split('/').next()?;
     let host = authority.rsplit_once(':').map_or(authority, |(h, p)| if p.bytes().all(|b| b.is_ascii_digit()) { h } else { authority });
     (!host.is_empty()).then_some(host)

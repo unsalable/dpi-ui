@@ -92,7 +92,20 @@ impl Controller {
                 let status = inner.status.clone();
                 broadcast(&mut inner, Event::Engine { status });
             }
-            EngineMsg::DnsQuery { .. } => {}
+            EngineMsg::DnsHealth { ok } => {
+                if inner.status.state != EngineState::On {
+                    return;
+                }
+                inner.status.message =
+                    (!ok).then(|| "Şifreli DNS'e ulaşılamıyor; geçici olarak sistem DNS'i kullanılıyor.".to_owned());
+                if ok {
+                    info!("Şifreli DNS yeniden erişilebilir.");
+                } else {
+                    warn!("Şifreli DNS'e ulaşılamıyor; sistem DNS'ine düşüldü.");
+                }
+                let status = inner.status.clone();
+                broadcast(&mut inner, Event::Engine { status });
+            }
         }
     }
 
@@ -154,7 +167,7 @@ impl Controller {
 
     fn stats(&self) -> StatsSnapshot {
         let inner = self.inner.lock().unwrap();
-        inner.engine.as_ref().map(|e| e.stats.lock().unwrap().clone()).unwrap_or_default()
+        inner.engine.as_ref().map(RunningEngine::stats).unwrap_or_default()
     }
 
     pub fn connect(&self) -> Result<(), String> {
@@ -168,13 +181,23 @@ impl Controller {
         }
         let method = inner.config.active_method();
         let dns = inner.config.active_dns();
-        let dns_mode = match &dns {
-            // Sifreli DNS isleyicisi (Asama 3) gelene kadar sistem DNS'ine dokunulmaz.
-            ActiveDns::Off | ActiveDns::Encrypted { .. } => DnsMode::Off,
-            ActiveDns::Redirect { v4, v6, .. } => DnsMode::Redirect(Redirect {
-                v4: v4.map(|(a, p)| (a.octets(), p)),
-                v6: v6.map(|(a, p)| (a.octets(), p)),
-            }),
+        let (dns_mode, dns_setup) = match &dns {
+            ActiveDns::Off => (DnsMode::Off, None),
+            ActiveDns::Encrypted { url, bootstrap, .. } => (
+                DnsMode::Intercept,
+                Some(engine_loop::DnsSetup {
+                    url: url.clone(),
+                    bootstrap: bootstrap.clone(),
+                    options: crate::dns::Options {
+                        fallback_to_system: inner.config.dns.fallback_to_system,
+                        skip_on_vpn: inner.config.dns.skip_on_vpn,
+                    },
+                }),
+            ),
+            ActiveDns::Redirect { v4, v6, .. } => (
+                DnsMode::Redirect(Redirect { v4: v4.map(|(a, p)| (a.octets(), p)), v6: v6.map(|(a, p)| (a.octets(), p)) }),
+                None,
+            ),
         };
         let scope = inner.config.build_scope(inner.learned.iter().map(|h| h.host.clone()));
         let processor = Processor::new(method.config.clone(), dns_mode, scope);
@@ -197,7 +220,7 @@ impl Controller {
         let status = inner.status.clone();
         broadcast(inner, Event::Engine { status });
 
-        let result = match engine_loop::start(&self.exe_dir, processor, false, self.tx.clone()) {
+        let result = match engine_loop::start(&self.exe_dir, processor, dns_setup, self.tx.clone()) {
             Ok(engine) => {
                 info!("Motor başlatıldı: {} · {}", method.name, dns.display_name());
                 inner.engine = Some(engine);

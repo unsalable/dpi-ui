@@ -19,7 +19,7 @@ use engine::{Event, IpPacket, ItemKind, Output, Processor, Verdict};
 use shared::ipc::StatsSnapshot;
 use windivert::{Address, Handle, Layer, OsError, Shutdown};
 
-use crate::{error, warn};
+use crate::{dns, error, warn};
 
 const BATCH: usize = 16;
 const BUF: usize = 256 * 1024;
@@ -30,22 +30,34 @@ pub enum EngineMsg {
     Learned { host: String, reason: engine::LearnReason },
     /// Dongu kendiliginden durdu (kurtarilamaz hata).
     Stopped { error: String },
-    /// Yakalanan DNS sorgusu (sifreli DNS modunda).
-    DnsQuery { packet: Vec<u8>, addr: Address },
+    /// Sifreli DNS'e ulasilabilirlik degisti.
+    DnsHealth { ok: bool },
+}
+
+/// Sifreli DNS ayarlari (yakalama modunda).
+pub struct DnsSetup {
+    pub url: String,
+    pub bootstrap: Vec<std::net::IpAddr>,
+    pub options: dns::Options,
 }
 
 pub struct RunningEngine {
     handle: Arc<Handle>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
-    pub stats: Arc<Mutex<StatsSnapshot>>,
-    pub filter: String,
+    stats: Arc<Mutex<StatsSnapshot>>,
+    dns_stats: Option<Arc<dns::DnsStats>>,
 }
 
 impl RunningEngine {
-    /// Enjeksiyon icin tutamac (DNS yanitlari ayni tutamactan gonderilir).
-    pub fn handle(&self) -> Arc<Handle> {
-        self.handle.clone()
+    pub fn stats(&self) -> StatsSnapshot {
+        let mut s = self.stats.lock().map(|s| s.clone()).unwrap_or_default();
+        if let Some(d) = &self.dns_stats {
+            s.dns_queries = d.queries.load(Ordering::Relaxed);
+            s.dns_cached = d.cached.load(Ordering::Relaxed);
+            s.dns_failures = d.failures.load(Ordering::Relaxed);
+        }
+        s
     }
 
     pub fn stop(mut self) {
@@ -60,13 +72,30 @@ impl RunningEngine {
 }
 
 /// Motoru acar. Hata metni kullaniciya gosterilecek Turkce aciklamadir.
-pub fn start(dir: &Path, mut processor: Processor, intercept_dns: bool, tx: Sender<EngineMsg>) -> Result<RunningEngine, String> {
+pub fn start(dir: &Path, mut processor: Processor, dns_setup: Option<DnsSetup>, tx: Sender<EngineMsg>) -> Result<RunningEngine, String> {
     windivert::load(dir).map_err(|e| format!("WinDivert yüklenemedi: {e}. Kurulum klasörü eksik olabilir."))?;
     let filter = processor.build_filter();
     windivert::compile_filter(&filter, Layer::Network).map_err(|e| format!("Filtre oluşturulamadı: {e}"))?;
 
     let handle = Arc::new(Handle::open(&filter, Layer::Network, 0, 0).map_err(describe_open_error)?);
     // Paketler biz geri gonderene kadar bekler; kuyruk varsayilanlari (4096 paket, 2 sn) yeterli.
+
+    // Sifreli DNS cozucusu ayni tutamactan yanit enjekte eder. Kurulamazsa yakalanan
+    // sorgular oldugu gibi birakilir (sistem DNS'i), yani DNS asla kesilmez.
+    let resolver = dns_setup.and_then(|d| match dns::doh::DohClient::new(&d.url, &d.bootstrap) {
+        Ok(client) => {
+            let tx = tx.clone();
+            let cb: dns::resolver::HealthCallback = Arc::new(move |ok| {
+                let _ = tx.send(EngineMsg::DnsHealth { ok });
+            });
+            Some(dns::Resolver::start(handle.clone(), client, d.options, cb))
+        }
+        Err(e) => {
+            warn!("Şifreli DNS kurulamadı ({e}); sistem DNS'i kullanılacak.");
+            None
+        }
+    });
+    let dns_stats = resolver.as_ref().map(|r| r.stats.clone());
 
     let stop = Arc::new(AtomicBool::new(false));
     let stats = Arc::new(Mutex::new(StatsSnapshot::default()));
@@ -79,7 +108,7 @@ pub fn start(dir: &Path, mut processor: Processor, intercept_dns: bool, tx: Send
             .stack_size(256 * 1024)
             .spawn(move || {
                 raise_priority();
-                let result = run(&handle, &mut processor, intercept_dns, &stop, &stats, &tx);
+                let result = run(&handle, &mut processor, resolver.as_ref(), &stop, &stats, &tx);
                 if let Err(e) = result {
                     if !stop.load(Ordering::SeqCst) {
                         error!("Motor durdu: {e}");
@@ -89,13 +118,13 @@ pub fn start(dir: &Path, mut processor: Processor, intercept_dns: bool, tx: Send
             })
             .map_err(|e| format!("Motor iş parçacığı başlatılamadı: {e}"))?
     };
-    Ok(RunningEngine { handle, stop, thread: Some(thread), stats, filter })
+    Ok(RunningEngine { handle, stop, thread: Some(thread), stats, dns_stats })
 }
 
 fn run(
     handle: &Handle,
     processor: &mut Processor,
-    intercept_dns: bool,
+    resolver: Option<&dns::Resolver>,
     stop: &AtomicBool,
     stats: &Mutex<StatsSnapshot>,
     tx: &Sender<EngineMsg>,
@@ -169,16 +198,15 @@ fn run(
                     windivert::calc_checksums(pkt, Some(addr), 0);
                     handle.send(pkt, addr).is_ok()
                 }
-                Verdict::DnsQuery => {
-                    if intercept_dns {
-                        // Orijinal sorgu tutulur; DNS isleyicisi yaniti enjekte eder ya da
-                        // basarisiz olursa sorguyu oldugu gibi birakir.
-                        let _ = tx.send(EngineMsg::DnsQuery { packet: pkt.to_vec(), addr: *addr });
-                        true
-                    } else {
-                        handle.send(pkt, addr).is_ok()
-                    }
-                }
+                Verdict::DnsQuery => match resolver {
+                    // Orijinal sorgu tutulur; cozucu yaniti enjekte eder ya da basarisiz
+                    // olursa sorguyu oldugu gibi gonderir. Kuyruk doluysa hemen gonder.
+                    Some(r) => match r.submit(dns::DnsJob { packet: pkt.to_vec(), addr: *addr }) {
+                        Ok(()) => true,
+                        Err(job) => handle.send(&job.packet, &job.addr).is_ok(),
+                    },
+                    None => handle.send(pkt, addr).is_ok(),
+                },
                 Verdict::Replace => send_output(handle, &mut out, pkt, addr),
             };
             if !sent {
