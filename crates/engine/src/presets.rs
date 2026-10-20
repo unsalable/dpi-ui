@@ -118,6 +118,38 @@ pub const WRONG_CHECKSUM: Method = Method {
     build: || DpiConfig { fake_ttl: false, fake_wrong_checksum: true, fake_wrong_seq: true, ..DpiConfig::default() },
 };
 
+/// GoodbyeDPI -6: sahte paket gecmiste kalan SEQ ile gider (TTL'e dokunmaz).
+pub const WRONG_SEQ: Method = Method {
+    id: "wrongseq",
+    name: "Yanlış SEQ",
+    description: "Sahte paket geçersiz sıra numarasıyla gider; sunucu atar (GoodbyeDPI -6).",
+    build: || DpiConfig { fake_ttl: false, fake_wrong_seq: true, ..DpiConfig::default() },
+};
+
+/// GoodbyeDPI -7: sahte paket yalnizca bozuk saglamayla gider.
+pub const BAD_CHECKSUM: Method = Method {
+    id: "badsum",
+    name: "Bozuk sağlama",
+    description: "Sahte paket yalnızca bozuk TCP sağlamasıyla gider (GoodbyeDPI -7).",
+    build: || DpiConfig { fake_ttl: false, fake_wrong_checksum: true, ..DpiConfig::default() },
+};
+
+/// GoodbyeDPI "-5 --set-ttl 3": TTL 3 sahte paket + bolme.
+pub const TTL3_SPLIT: Method = Method {
+    id: "ttl3split",
+    name: "TTL 3 + bölme",
+    description: "Sahte paket TTL 3 ile gider, istek ters sırada bölünür (GoodbyeDPI -5 --set-ttl 3).",
+    build: || DpiConfig { auto_ttl: false, ttl: 3, split_sni: false, ..DpiConfig::default() },
+};
+
+/// GoodbyeDPI "-5 --set-ttl 4".
+pub const TTL4_SPLIT: Method = Method {
+    id: "ttl4split",
+    name: "TTL 4 + bölme",
+    description: "Sahte paket TTL 4 ile gider, istek ters sırada bölünür (GoodbyeDPI -5 --set-ttl 4).",
+    build: || DpiConfig { auto_ttl: false, ttl: 4, split_sni: false, ..DpiConfig::default() },
+};
+
 pub const SPLIT_ONLY: Method = Method {
     id: "split",
     name: "Sadece bölme",
@@ -137,6 +169,10 @@ pub const ALL: &[Method] = &[
     ZERO_FAKE,
     PLAIN_SPLIT,
     WRONG_CHECKSUM,
+    TTL3_SPLIT,
+    TTL4_SPLIT,
+    WRONG_SEQ,
+    BAD_CHECKSUM,
     SPLIT_ONLY,
 ];
 
@@ -164,7 +200,7 @@ pub const ISPS: &[Isp] = &[
         id: "general",
         name: "Genel",
         description: "Sağlayıcıya özel ayar yok; genel yöntemler listelenir.",
-        methods: &["default", "fixedttl", "disorder", "checksum", "split"],
+        methods: &["default", "fixedttl", "disorder", "ttl3split", "checksum", "split"],
     },
     Isp {
         id: "turktelekom",
@@ -175,8 +211,8 @@ pub const ISPS: &[Isp] = &[
     Isp {
         id: "superonline",
         name: "Superonline",
-        description: "Önerilen: Ters sıra. Olmazsa MD5 imzası / MD5 + TTL 3 / Sahte TTL 3.",
-        methods: &["disorder", "md5sig", "md5ttl3", "ttl3"],
+        description: "Önerilen: Ters sıra. Olmazsa MD5 imzası / MD5 + TTL 3 / Sahte TTL 3 / TTL 3 + bölme.",
+        methods: &["disorder", "md5sig", "md5ttl3", "ttl3", "ttl3split", "checksum"],
     },
     Isp {
         id: "vodafone",
@@ -188,7 +224,7 @@ pub const ISPS: &[Isp] = &[
         id: "turknet",
         name: "TürkNet",
         description: "Önerilen: Varsayılan (otomatik TTL). Olmazsa Sabit TTL / Ters sıra.",
-        methods: &["default", "fixedttl", "disorder"],
+        methods: &["default", "fixedttl", "disorder", "ttl4split"],
     },
     Isp {
         id: "kablonet",

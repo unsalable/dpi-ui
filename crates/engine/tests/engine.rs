@@ -452,11 +452,66 @@ fn http() {
     let (v, out) = run(&mut proc, &mut p, true, 0);
     assert_eq!(v, Verdict::Replace);
     assert!(contains(&out[0].data, b"Host: www.w3.org"));
-    assert_eq!(reassemble(&out[1..], 10), req.as_bytes());
+    // Gercek istekte yalnizca baslik adinin harf duzeni degisir; boy ve icerik ayni kalir.
+    let expected = req.replace("\r\nHost:", "\r\nhoSt:");
+    assert_ne!(expected, req);
+    assert_eq!(reassemble(&out[1..], 10), expected.as_bytes());
 
     let mut no = proc_with(DpiConfig { fragment_http: false, ..DpiConfig::default() });
     assert_eq!(run(&mut no, &mut p, true, 0).0, Verdict::Pass);
     assert!(!no.build_filter().contains("DstPort == 80"));
+}
+
+/// "hoSt:" yazimi: sahte paket ve bolme kapaliyken de paket yerinde degisir.
+#[test]
+fn http_host_case() {
+    let only_case = DpiConfig { fake_packet: false, split_tls: false, ..DpiConfig::default() };
+    for header in ["Host", "HOST", "host"] {
+        let mut proc = proc_with(only_case.clone());
+        let req = format!("GET /a HTTP/1.1\r\nUser-Agent: x\r\n{header}: {BLOCKED}\r\n\r\n");
+        let mut p = out_tcp(false, 50021, 80, 10, req.as_bytes());
+        let len = p.len();
+        let (v, out) = run(&mut proc, &mut p, true, 0);
+        assert_eq!(v, Verdict::Modified, "{header}");
+        assert!(out.is_empty());
+        assert_eq!(p.len(), len, "boy degismemeli");
+        assert!(contains(&p, format!("\r\nhoSt: {BLOCKED}").as_bytes()), "{header}");
+        // Ikinci kez islemek bir sey degistirmez.
+        assert_eq!(run(&mut proc, &mut p, true, 0).0, Verdict::Pass);
+    }
+
+    // Kapaliyken hic dokunulmaz.
+    let mut off = proc_with(DpiConfig { http_host_case: false, ..only_case });
+    let req = format!("GET / HTTP/1.1\r\nHost: {BLOCKED}\r\n\r\n");
+    let mut p = out_tcp(false, 50022, 80, 10, req.as_bytes());
+    let before = p.clone();
+    assert_eq!(run(&mut off, &mut p, true, 0).0, Verdict::Pass);
+    assert_eq!(p, before);
+}
+
+/// GoodbyeDPI kombinasyonlarindan gelen yontemler beklenen ayarlari kurar.
+#[test]
+fn goodbyedpi_style_methods() {
+    let m = |id: &str| presets::method(id).unwrap_or_else(|| panic!("{id} yok")).config();
+    let seq = m("wrongseq");
+    assert!(seq.fake_wrong_seq && !seq.fake_ttl && !seq.fake_wrong_checksum && seq.split_tls);
+    let sum = m("badsum");
+    assert!(sum.fake_wrong_checksum && !sum.fake_ttl && !sum.fake_wrong_seq);
+    for (id, ttl) in [("ttl3split", 3), ("ttl4split", 4)] {
+        let c = m(id);
+        assert!(c.fake_ttl && !c.auto_ttl && c.split_tls && c.reverse_split, "{id}");
+        assert_eq!(c.ttl, ttl, "{id}");
+    }
+    // Her yontem kimligi tek ve her ISS onerisi var olan bir yonteme gider.
+    let mut ids: Vec<&str> = presets::ALL.iter().map(|m| m.id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), presets::ALL.len());
+    for isp in presets::ISPS {
+        for id in isp.methods {
+            assert!(presets::method(id).is_some(), "{} -> {id}", isp.id);
+        }
+    }
 }
 
 #[test]

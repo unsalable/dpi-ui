@@ -84,6 +84,9 @@ pub struct DpiConfig {
     // ------------------------------------------------------------------ diger
     pub block_quic: bool,
     pub fragment_http: bool,
+    /// HTTP isteginde "Host:" basligini "hoSt:" yaz (boy degismez; RFC 9110'a gore basliklar
+    /// buyuk/kucuk harfe duyarsizdir, sunucu ayni sekilde okur).
+    pub http_host_case: bool,
     /// Discord ses IP Discovery ve STUN mesajlarindan once sahte UDP gonder.
     pub voice_fake: bool,
     pub voice_fake_repeats: u8,
@@ -112,6 +115,7 @@ impl Default for DpiConfig {
             seq_overlap: 0,
             block_quic: true,
             fragment_http: true,
+            http_host_case: true,
             voice_fake: true,
             voice_fake_repeats: 6,
             extra_tls_ports: Vec::new(),

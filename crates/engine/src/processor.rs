@@ -368,7 +368,12 @@ impl Processor {
             if ip.dst_port == 80 && self.cfg.fragment_http && looks_like_http(ip.payload(p)) {
                 let host = tls::http_host(ip.payload(p));
                 return match self.scope.decide(host) {
-                    Decision::Bypass => self.handle_request(p, &ip, false, out, now_ms),
+                    Decision::Bypass => {
+                        let changed = self.cfg.http_host_case && mix_host_header(p, &ip);
+                        let v = self.handle_request(p, &ip, false, out, now_ms);
+                        // Yalnizca baslik degistiyse paket yerinde degismis demektir.
+                        if changed && v == Verdict::Pass { Verdict::Modified } else { v }
+                    }
                     Decision::Pass | Decision::Watch(_) => {
                         self.stats.untouched += 1;
                         Verdict::Pass
@@ -884,6 +889,21 @@ pub fn compute_auto_ttl(observed: u8, fallback: u8) -> u8 {
 /// Gozlenen TTL 64'un ustundeyse sunucunun baslangic TTL'i 128 ya da 255'tir.
 pub fn is_first_wins_initial_ttl(observed: u8) -> bool {
     observed > 64
+}
+
+/// `Host:` basligini (harf duzeni ne olursa olsun) `hoSt:` yapar.
+pub fn mix_host_header(p: &mut [u8], ip: &IpPacket) -> bool {
+    let start = ip.payload_offset;
+    let end = start + ip.payload_len.min(2048);
+    let Some(rel) = p[start..end].windows(7).position(|w| w[..2] == *b"\r\n" && w[2..6].eq_ignore_ascii_case(b"host") && w[6] == b':') else {
+        return false;
+    };
+    let at = start + rel + 2;
+    if p[at..at + 4] == *b"hoSt" {
+        return false;
+    }
+    p[at..at + 4].copy_from_slice(b"hoSt");
+    true
 }
 
 fn looks_like_http(payload: &[u8]) -> bool {
