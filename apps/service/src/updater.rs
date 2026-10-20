@@ -168,6 +168,8 @@ fn file_matches(path: &Path, m: &Manifest) -> bool {
 
 /// Kurulmus (ya da eskimis) indirmeleri temizler.
 fn cleanup_installed(current: &Version) {
+    // 3.0.0 oncesi surumlerin indirdigi eski adli paket artik hic kullanilmaz.
+    let _ = std::fs::remove_file(shared::paths::update_dir().join(update::LEGACY_INSTALLER_NAME));
     let marker = shared::paths::update_dir().join("version.txt");
     if let Some(v) = std::fs::read_to_string(&marker).ok().and_then(|t| Version::parse(&t)) {
         if v <= *current {
