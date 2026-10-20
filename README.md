@@ -52,6 +52,7 @@ bağlanma animasyonunun ekran görüntülerini PNG olarak yazar. Pencere/tepsi k
 powershell -ExecutionPolicy Bypass -File perf\quit-test.ps1 -Exe target\release\GoodbyeDPI3.exe
 powershell -ExecutionPolicy Bypass -File perf\tray-menu-test.ps1 -Exe target\release\GoodbyeDPI3.exe
 powershell -ExecutionPolicy Bypass -File perf\repaint-test.ps1 -Exe target\release\GoodbyeDPI3.exe
+powershell -ExecutionPolicy Bypass -File perf\minimize-test.ps1 -Exe target\release\GoodbyeDPI3.exe
 ```
 
 Güncelleme denetimi (yönetici gerekmez; indirir ve doğrular, kurmaz):

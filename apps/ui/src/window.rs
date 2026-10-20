@@ -725,6 +725,29 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
 
     bind_callbacks(&app);
 
+    // Windows simge durumuna kucultmede (ve bazen ortulup acilinca) pencere icerigini atar;
+    // Slint ise yalnizca degisen yerleri yeniden cizer. Pencere geri gelince tamami cizilsin.
+    app.window().on_winit_window_event({
+        let weak = app.as_weak();
+        move |_, event| {
+            use winit::event::WindowEvent;
+            let restore = match event {
+                WindowEvent::Resized(size) => size.width > 0 && size.height > 0,
+                WindowEvent::Occluded(false) | WindowEvent::Focused(true) => true,
+                _ => false,
+            };
+            if restore {
+                let weak = weak.clone();
+                Timer::single_shot(Duration::from_millis(0), move || {
+                    if let Some(app) = weak.upgrade() {
+                        app.set_repaint_epoch(app.get_repaint_epoch().wrapping_add(1));
+                    }
+                });
+            }
+            slint::winit_030::EventResult::Propagate
+        }
+    });
+
     // Servis baglantisi: olaylar IPC is parcacigindan arayuz dongusune aktarilir.
     let client = Client::start("pencere", |inc| {
         let _ = slint::invoke_from_event_loop(move || with_ctx(|c| c.on_incoming(inc)));

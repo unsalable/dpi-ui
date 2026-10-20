@@ -13,7 +13,9 @@ export component AppWindow inherits Window {
     width: 400px;
     height: 640px;
     no-frame: true;
-    background: Theme.bg;
+    /// Artinca tum pencere yeniden cizilir (Windows icerigi attiginda: simge durumundan donus vb.).
+    in-out property <int> repaint-epoch;
+    background: root.repaint-epoch >= 0 ? Theme.bg : Theme.bg;
     default-font-family: "Segoe UI Variable Text";
     default-font-size: 14px;
 
