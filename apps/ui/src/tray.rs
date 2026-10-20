@@ -69,7 +69,7 @@ fn tooltip(v: &View) -> String {
             EngineState::Off => "Kapalı".to_owned(),
         }
     };
-    let t = format!("GoodbyeDPI — {state}");
+    let t = format!("DPI UI — {state}");
     t.chars().take(120).collect()
 }
 
@@ -222,7 +222,7 @@ pub fn run() -> i32 {
         let wc = WNDCLASSW { lpfnWndProc: Some(wndproc), hInstance: instance, lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
         RegisterClassW(&wc);
         // Gizli ust duzey pencere: TaskbarCreated yayinini yalnizca bunlar alir.
-        let hwnd = CreateWindowExW(0, class.as_ptr(), wide("GoodbyeDPI").as_ptr(), WS_OVERLAPPED, 0, 0, 0, 0, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
+        let hwnd = CreateWindowExW(0, class.as_ptr(), wide("DPI UI").as_ptr(), WS_OVERLAPPED, 0, 0, 0, 0, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
         if hwnd.is_null() {
             return 1;
         }

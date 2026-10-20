@@ -56,7 +56,7 @@ try {
     Start-Sleep -Milliseconds 300
     Shot $menu "tray-menu-live.png"
 
-    # Uzerine gelme: "GoodbyeDPI'i ac" satiri (mantiksal y = 136).
+    # Uzerine gelme: "Uygulamayi ac" satiri (mantiksal y = 136).
     [void][W32M]::PostMessage($menu, 0x0200, [IntPtr]::Zero, (LParam ([int](130 * $s)) ([int](136 * $s))))
     Start-Sleep -Milliseconds 250
     Shot $menu "tray-menu-live-hover.png"

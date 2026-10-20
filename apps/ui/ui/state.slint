@@ -86,7 +86,6 @@ export global AppState {
     in-out property <bool> update-ready;
     in-out property <bool> update-busy;
     in-out property <bool> auto-update: true;
-    in-out property <bool> beta-updates;
 
     // ---------------------------------------------------------------- bildirim
     in-out property <string> toast;
@@ -117,7 +116,6 @@ export global AppState {
     callback clear-learned();
     callback set-start-with-windows(bool);
     callback set-auto-update(bool);
-    callback set-beta-updates(bool);
     callback check-update();
     callback install-update();
     callback set-auto-connect(bool);

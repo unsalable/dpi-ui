@@ -83,7 +83,7 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
     let mut s = StreamOwned::new(conn, tcp);
 
     let req = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: GoodbyeDPI-UI-3/{}\r\nAccept: {accept}\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: DPI-UI/{}\r\nAccept: {accept}\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
         u.path,
         u.host,
         shared::VERSION

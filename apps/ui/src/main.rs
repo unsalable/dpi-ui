@@ -1,6 +1,6 @@
 ﻿#![windows_subsystem = "windows"]
 
-//! GoodbyeDPI UI 3 arayuzu.
+//! DPI UI arayuzu.
 //!   GoodbyeDPI3.exe          pencere (tek ornek; ikinci acilis var olani one getirir)
 //!   GoodbyeDPI3.exe --tray   yalnizca tepsi simgesi (Slint yuklenmez)
 //!   GoodbyeDPI3.exe --quit   acik pencereyi ve tepsiyi kapatir
@@ -41,7 +41,7 @@ fn main() {
     if let Err(e) = window::run(show_event) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};
         let text = winsys::wide(&format!("Pencere açılamadı: {e}"));
-        let title = winsys::wide("GoodbyeDPI UI 3");
+        let title = winsys::wide("DPI UI");
         unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_ICONERROR) };
     }
 }

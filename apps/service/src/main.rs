@@ -1,4 +1,4 @@
-//! GoodbyeDPI UI 3 motor hizmeti.
+//! DPI UI motor hizmeti.
 //!
 //! Kullanim:
 //!   GoodbyeDPI3-Service.exe --service      (Windows hizmet yoneticisi baslatir)

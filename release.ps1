@@ -1,4 +1,4 @@
-# GoodbyeDPI UI 3 - surum yayinlama
+# DPI UI - surum yayinlama
 # 1) surum numarasini denetler (Cargo.toml ve installer\setup.iss ayni olmali)
 # 2) publish.ps1 ile paketi derler   3) imzalar ve dogrular (tools\release)
 # 4) etiketi gonderir ve GitHub'da surumu olusturur (on surumler "pre-release" isaretlenir)
@@ -7,6 +7,8 @@
 #   powershell -ExecutionPolicy Bypass -File release.ps1 -Version 3.0.0-alpha.2 -Notes "Degisiklikler..."
 #   -Bump   : surum numarasini dosyalara yazar ve commit eder (once)
 #   -DryRun : GitHub'a hicbir sey gondermez, yalnizca paketi uretir ve imzalar
+#   -Legacy : paketi eski adla (GoodbyeDPI-UI-3-Setup.exe) da yukler ve manifest o adi gosterir;
+#             3.0.0-alpha.1 kurulumlari da guncellemeyi bulsun diye (gecis surumu icin)
 #
 # Imza anahtari varsayilan olarak %USERPROFILE%\.dpi-ui\release-signing.pk8 (depoda DEGIL).
 # Not: dosya bilerek yalnizca ASCII karakter icerir.
@@ -15,7 +17,8 @@ param(
     [string] $Notes = "",
     [string] $Key = "$env:USERPROFILE\.dpi-ui\release-signing.pk8",
     [switch] $Bump,
-    [switch] $DryRun
+    [switch] $DryRun,
+    [switch] $Legacy
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,9 +51,14 @@ if ($LASTEXITCODE -ne 0) { throw "paket olusturulamadi" }
 $out = "build\release\$Version"
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $out | Out-Null
-Copy-Item "build\GoodbyeDPI-UI-3-Setup.exe" $out
+Copy-Item "build\DPI-UI-Setup.exe" $out
 cargo build --release -p release-tool --quiet
-& target\release\release-tool.exe sign $Key "$out\GoodbyeDPI-UI-3-Setup.exe" $Version $out
+if ($Legacy) {
+    Copy-Item "$out\DPI-UI-Setup.exe" "$out\GoodbyeDPI-UI-3-Setup.exe"
+    & target\release\release-tool.exe sign $Key "$out\DPI-UI-Setup.exe" $Version $out --legacy
+} else {
+    & target\release\release-tool.exe sign $Key "$out\DPI-UI-Setup.exe" $Version $out
+}
 if ($LASTEXITCODE -ne 0) { throw "imzalama basarisiz" }
 
 if ($DryRun) {
@@ -59,11 +67,12 @@ if ($DryRun) {
 }
 
 $tag = "v$Version"
-git tag -a $tag -m "GoodbyeDPI UI 3 $Version"
+git tag -a $tag -m "DPI UI $Version"
 git push origin HEAD
 git push origin $tag
-$ghArgs = @("release", "create", $tag, "$out\GoodbyeDPI-UI-3-Setup.exe", "$out\update.json", "$out\update.json.sig",
-    "--title", "GoodbyeDPI UI 3 $Version", "--notes", $(if ($Notes) { $Notes } else { "GoodbyeDPI UI 3 $Version" }))
+$ghArgs = @("release", "create", $tag, "$out\DPI-UI-Setup.exe", "$out\update.json", "$out\update.json.sig")
+if ($Legacy) { $ghArgs += "$out\GoodbyeDPI-UI-3-Setup.exe" }
+$ghArgs += @("--title", "DPI UI $Version", "--notes", $(if ($Notes) { $Notes } else { "DPI UI $Version" }))
 if ($Version.Contains("-")) { $ghArgs += "--prerelease" }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "GitHub surumu olusturulamadi" }

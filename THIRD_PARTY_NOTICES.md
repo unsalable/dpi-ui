@@ -1,6 +1,6 @@
 # Üçüncü taraf bileşenler
 
-GoodbyeDPI UI 3'ün kendi kodu [MIT lisanslıdır](LICENSE). Uygulamayla birlikte dağıtılan ya da
+DPI UI'ın kendi kodu [MIT lisanslıdır](LICENSE). Uygulamayla birlikte dağıtılan ya da
 derlenirken içine giren bileşenler ve lisansları:
 
 | Bileşen | Kullanım | Lisans |

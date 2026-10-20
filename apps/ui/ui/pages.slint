@@ -26,6 +26,18 @@ export component HomePage inherits Page {
                 }
             }
 
+            Text {
+                x: 96px;
+                width: parent.width - 192px;
+                height: parent.height;
+                text: "DPI UI";
+                color: Theme.label;
+                font-size: Type.headline;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
             GlyphButton {
                 x: 10px;
                 y: (parent.height - self.height) / 2;
@@ -304,7 +316,6 @@ export component MethodPage inherits SubPage {
     title: "Bağlantı yöntemi";
 
     Group {
-        footer: AppState.isps[AppState.isp-index].subtitle;
         PickerRow {
             first: true;
             last: true;
@@ -319,7 +330,7 @@ export component MethodPage inherits SubPage {
 
     Group {
         header: "YÖNTEM";
-        footer: "Sağlayıcın için önerilen yöntem en üsttedir. Bir site açılmazsa sıradakini dene; değişiklik hemen uygulanır.";
+        footer: "Bir site açılmazsa sıradaki yöntemi dene.";
         for option[index] in AppState.methods: CheckRow {
             first: index == 0;
             last: index == AppState.methods.length - 1;
@@ -358,10 +369,10 @@ export component DnsPage inherits SubPage {
             padding-right: 16px;
             Text {
                 text: AppState.dns-mode == 0
-                    ? "Sistemin DNS ayarlarına dokunulmaz."
+                    ? "Sistem DNS'i kullanılır."
                     : AppState.dns-mode == 1
-                    ? "Sorgular şifreli (DoH/DoT) gider; sağlayıcın göremez ve yönlendiremez. Ağ ayarların değişmez."
-                    : "Sorgular seçilen sunucunun standart dışı portuna yönlendirilir (eski yöntem).";
+                    ? "Sorgular şifreli gider; sağlayıcın göremez."
+                    : "Sorgular sunucunun farklı bir portuna yönlendirilir.";
                 color: Theme.secondary;
                 font-size: Type.footnote;
                 wrap: word-wrap;
@@ -385,7 +396,6 @@ export component DnsPage inherits SubPage {
 
     if AppState.dns-mode == 1: Group {
         header: "HIZ TESTİ";
-        footer: "Her sağlayıcıya şifreli sorgular gönderip bu hattaki yanıt süresini ölçer.";
         ActionRow {
             first: true;
             last: AppState.bench.length == 0;
@@ -477,7 +487,7 @@ export component DnsPage inherits SubPage {
 
     if AppState.dns-mode != 0: Group {
         header: "ÖZEL SUNUCU EKLE";
-        footer: root.custom-error != "" ? root.custom-error : "IP (1.2.3.4 ya da 1.2.3.4:5353) ya da şifreli adres (https://… / tls://…) gir. Şifreli adreslerde sunucunun IP'si de gerekir.";
+        footer: root.custom-error != "" ? root.custom-error : "IP, IP:port ya da https:// / tls:// adresi.";
         footer-error: root.custom-error != "";
         FieldRow {
             first: true;
@@ -536,7 +546,6 @@ export component DnsPage inherits SubPage {
         ToggleRow {
             first: true;
             title: "Ulaşılamazsa sistem DNS'ine dön";
-            subtitle: "Şifreli DNS geçici olarak erişilemezse internet kesilmez.";
             checked: AppState.dns-fallback;
             toggled(v) => {
                 AppState.set-dns-fallback(v);
@@ -546,7 +555,6 @@ export component DnsPage inherits SubPage {
         ToggleRow {
             last: true;
             title: "VPN bağlıyken DNS'e dokunma";
-            subtitle: "Kurum içi adlar ve VPN'in kendi DNS'i bozulmaz.";
             checked: AppState.dns-skip-vpn;
             toggled(v) => {
                 AppState.set-dns-skip-vpn(v);
@@ -614,8 +622,8 @@ export component SitesPage inherits SubPage {
             padding-right: 16px;
             Text {
                 text: AppState.scope-mode == 0
-                    ? "Yalnızca engelli bilinen sitelere uygulanır; bankalar, oyunlar ve diğer siteler hiç etkilenmez. En kararlı seçenek."
-                    : "Her HTTPS bağlantısına uygulanır. Bazı site ve oyunlarda yan etki görülebilir; aşağıdaki istisna listesini kullan.";
+                    ? "Yalnızca engelli sitelere uygulanır."
+                    : "Tüm HTTPS bağlantılarına uygulanır.";
                 color: Theme.secondary;
                 font-size: Type.footnote;
                 wrap: word-wrap;
@@ -624,7 +632,6 @@ export component SitesPage inherits SubPage {
     }
 
     if AppState.scope-mode == 0: Group {
-        footer: "Bir site DPI yüzünden yanıtsız kalırsa hemen atlatılır ve listeye eklenir.";
         ToggleRow {
             first: true;
             last: true;
@@ -652,7 +659,6 @@ export component SitesPage inherits SubPage {
     if AppState.scope-mode == 0: HostGroup {
         header: "KENDİ SİTELERİM";
         placeholder: "site.com";
-        hint: "Alt alan adları da dahil edilir.";
         items: AppState.targets;
         add(host) => {
             return AppState.add-target(host);
@@ -692,7 +698,6 @@ export component SitesPage inherits SubPage {
     HostGroup {
         header: "ASLA DOKUNMA";
         placeholder: "banka.com.tr";
-        hint: "Bu sitelere hiçbir koşulda dokunulmaz.";
         items: AppState.excluded;
         add(host) => {
             return AppState.add-excluded(host);
@@ -713,7 +718,6 @@ export component GeneralPage inherits SubPage {
         ToggleRow {
             first: true;
             title: "Windows açılınca motoru başlat";
-            subtitle: "Oturum açmadan önce bile korur; arayüz kapalıyken de çalışır.";
             checked: AppState.start-with-windows;
             toggled(v) => {
                 AppState.set-start-with-windows(v);
@@ -740,9 +744,6 @@ export component GeneralPage inherits SubPage {
 
     Group {
         header: "PENCERE";
-        footer: AppState.close-to-tray
-            ? "Pencereyi kapatınca uygulama saatin yanındaki tepside kalır. Tamamen çıkmak için tepsi simgesine sağ tıklayıp Çık'ı seç."
-            : "Pencereyi kapatınca uygulama tamamen kapanır. Motor hizmeti ayarlarına göre çalışmaya devam eder.";
         ToggleRow {
             first: true;
             last: true;
@@ -756,11 +757,9 @@ export component GeneralPage inherits SubPage {
 
     Group {
         header: "GÜNCELLEMELER";
-        footer: AppState.auto-update
-            ? "Yeni sürüm GitHub'dan indirilir ve imzası doğrulanınca kurulum kendiliğinden başlar; Windows bir kez yönetici onayı ister."
-            : "Yeni sürüm indirilip doğrulanır; kurulumu Hakkında sayfasından sen başlatırsın.";
         ToggleRow {
             first: true;
+            last: true;
             title: "Güncellemeleri otomatik yükle";
             checked: AppState.auto-update;
             toggled(v) => {
@@ -768,20 +767,10 @@ export component GeneralPage inherits SubPage {
             }
         }
 
-        ToggleRow {
-            last: true;
-            title: "Ön sürümleri de al";
-            subtitle: "Beta ve test sürümleri de gelir.";
-            checked: AppState.beta-updates;
-            toggled(v) => {
-                AppState.set-beta-updates(v);
-            }
-        }
     }
 
     Group {
         header: "SORUN GİDERME";
-        footer: "Motorun son kayıtlarını gösterir; bir sorun bildirirken işe yarar.";
         ActionRow {
             first: true;
             last: true;
@@ -920,7 +909,6 @@ export component AppearancePage inherits SubPage {
 
     Group {
         header: "TEMA";
-        footer: "Sistem, Windows'un açık/koyu ayarını izler.";
         HorizontalLayout {
             padding-top: 18px;
             padding-bottom: 16px;
@@ -1016,7 +1004,7 @@ export component AboutPage inherits SubPage {
         VerticalLayout {
             spacing: 3px;
             Text {
-                text: "GoodbyeDPI UI 3";
+                text: "DPI UI";
                 color: Theme.label;
                 font-family: Type.display;
                 font-size: 20px;

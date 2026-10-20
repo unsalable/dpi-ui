@@ -130,7 +130,7 @@ fn row_label(i: usize, v: &View) -> &'static str {
     match i {
         0 if !v.connected => "Motor hizmetini başlat",
         0 => "Bağlantı",
-        1 => "GoodbyeDPI'ı aç",
+        1 => "Uygulamayı aç",
         _ => "Çık",
     }
 }
@@ -343,7 +343,7 @@ impl Surface {
 
         let (title_c, (st, st_c)) = (p.label, status(v, &p));
         let f = &self.fonts;
-        text(self.dc, f.title, s, 56.0, PAD + 9.0, W - 70.0, 20.0, "GoodbyeDPI", title_c);
+        text(self.dc, f.title, s, 56.0, PAD + 9.0, W - 70.0, 20.0, "DPI UI", title_c);
         text(self.dc, f.small, s, 56.0, PAD + 29.0, W - 70.0, 18.0, &st, st_c);
         for i in 0..3 {
             let color = if i == 0 && !v.connected { p.blue } else { p.label };
@@ -473,7 +473,7 @@ pub fn show_at(pt: POINT, view: &View, dark: bool, on_action: fn(Action)) {
         let hwnd = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
             class.as_ptr(),
-            wide("GoodbyeDPI").as_ptr(),
+            wide("DPI UI").as_ptr(),
             WS_POPUP,
             pt.x,
             pt.y,

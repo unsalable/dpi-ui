@@ -1,4 +1,4 @@
-# GoodbyeDPI UI 3
+# DPI UI
 
 [![CI](https://github.com/unsalable/dpi-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/unsalable/dpi-ui/actions/workflows/ci.yml)
 [![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-blue.svg)](LICENSE)
@@ -20,7 +20,7 @@ sıfırdan, Rust ile yazıldı; kendi DPI motorunu kullanır.
 ## Kurulum
 
 [Releases](https://github.com/unsalable/dpi-ui/releases) sayfasından en son
-`GoodbyeDPI-UI-3-Setup.exe` dosyasını indirip çalıştırın. Kurulum yönetici izni ister (WinDivert
+`DPI-UI-Setup.exe` dosyasını indirip çalıştırın. Kurulum yönetici izni ister (WinDivert
 sürücüsü ve motor hizmeti için); sonrasında uygulama normal kullanıcı olarak çalışır.
 
 ## Güncellemeler nasıl çalışır
@@ -42,7 +42,7 @@ Gereksinimler: Rust (MSVC), Visual Studio C++ araçları, Inno Setup 6.
 
 ```powershell
 cargo test --workspace
-powershell -ExecutionPolicy Bypass -File publish.ps1   # -> build\GoodbyeDPI-UI-3-Setup.exe
+powershell -ExecutionPolicy Bypass -File publish.ps1   # -> build\DPI-UI-Setup.exe
 ```
 
 Arayüz testleri pencere açmadan bellekte çizer; `GDPI3_SHOTS=<klasör>` verilirse her sayfanın ve
@@ -56,14 +56,14 @@ powershell -ExecutionPolicy Bypass -File perf\tray-menu-test.ps1 -Exe target\rel
 Güncelleme denetimi (yönetici gerekmez; indirir ve doğrular, kurmaz):
 
 ```powershell
-target\release\GoodbyeDPI3-Service.exe --check-update --as-version 3.0.0-alpha.0
+target\release\GoodbyeDPI3-Service.exe --check-update --as-version 3.0.0-rc.1
 ```
 
 Canlı motor testi (yönetici terminali, uygulamada bağlantı kesikken):
 
 ```powershell
-& "C:\Program Files\GoodbyeDPI UI 3\GoodbyeDPI3-Service.exe" --probe
-& "C:\Program Files\GoodbyeDPI UI 3\GoodbyeDPI3-Service.exe" --dns-bench
+& "C:\Program Files\DPI UI\GoodbyeDPI3-Service.exe" --probe
+& "C:\Program Files\DPI UI\GoodbyeDPI3-Service.exe" --dns-bench
 ```
 
 ## Sürüm yayınlama
@@ -72,7 +72,7 @@ Canlı motor testi (yönetici terminali, uygulamada bağlantı kesikken):
 (`%USERPROFILE%\.dpi-ui\release-signing.pk8`) durur.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File release.ps1 -Version 3.0.0-alpha.2 -Bump -Notes "Değişiklikler"
+powershell -ExecutionPolicy Bypass -File release.ps1 -Version 3.0.1 -Bump -Notes "Değişiklikler"
 ```
 
 ## Lisans

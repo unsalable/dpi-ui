@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use engine::presets;
-use shared::config::{AppConfig, CustomDns, CustomDnsKind, DnsMode, UpdateChannel, UpdateMode};
+use shared::config::{AppConfig, CustomDns, CustomDnsKind, DnsMode, UpdateMode};
 use shared::update::{UpdateState, UpdateStatus};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, StateSnapshot};
 use slint::winit_030::{WinitWindowAccessor, winit};
@@ -259,8 +259,8 @@ impl Ctx {
         }
         let (mut power, mut title, mut sub) = match e.state {
             EngineState::Off => (PowerState::Off, "Kapalı".to_owned(), "Bağlanmak için dokun".to_owned()),
-            EngineState::Starting => (PowerState::Connecting, "Bağlanıyor…".to_owned(), "Motor başlatılıyor".to_owned()),
-            EngineState::On => (PowerState::On, "Korumalı".to_owned(), uptime_text(e.since_ms)),
+            EngineState::Starting => (PowerState::Connecting, "Bağlanıyor…".to_owned(), String::new()),
+            EngineState::On => (PowerState::On, "Korumalı".to_owned(), String::new()),
             EngineState::Paused => (
                 PowerState::Off,
                 "Duraklatıldı".to_owned(),
@@ -280,7 +280,7 @@ impl Ctx {
                 if settled {
                     Timer::single_shot(MIN_BUSY - elapsed, || with_ctx(|c| c.apply_engine()));
                 }
-                (power, title, sub) = (PowerState::Connecting, "Bağlanıyor…".to_owned(), "Motor başlatılıyor".to_owned());
+                (power, title, sub) = (PowerState::Connecting, "Bağlanıyor…".to_owned(), String::new());
             } else {
                 self.pending_connect.set(None);
             }
@@ -420,7 +420,6 @@ impl Ctx {
         st.set_start_with_windows(cfg.start_with_windows);
         st.set_auto_connect(cfg.auto_connect);
         st.set_auto_update(cfg.updates == UpdateMode::Auto);
-        st.set_beta_updates(cfg.update_channel == UpdateChannel::Beta);
         st.set_method_name(s(cfg.active_method().name));
         st.set_dns_name(s(cfg.active_dns().display_name()));
 
@@ -651,16 +650,6 @@ impl Ctx {
 
 }
 
-fn uptime_text(since: Option<u64>) -> String {
-    let Some(since) = since else { return "Bağlantı korunuyor".into() };
-    let mins = now_ms().saturating_sub(since) / 60_000;
-    match mins {
-        0 => "Az önce bağlandı".into(),
-        1..=59 => format!("{mins} dakikadır korumalı"),
-        _ => format!("{} sa {} dk'dır korumalı", mins / 60, mins % 60),
-    }
-}
-
 fn category_title(id: &str) -> &'static str {
     match id {
         "discord" => "Discord",
@@ -812,15 +801,6 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
         }
     }
 
-    // Sure metni (yalnizca bagliyken).
-    let uptime = Timer::default();
-    uptime.start(TimerMode::Repeated, Duration::from_secs(20), || {
-        with_ctx(|c| {
-            if c.engine.borrow().state == EngineState::On {
-                c.apply_engine();
-            }
-        })
-    });
     app.show()?;
     // Slint winit penceresini olay dongusu baslayinca olusturur; o ana kadar HWND yoktur.
     // Yuvarlak kose, golge, simge ve koyu cerceve pencere olusur olusmaz uygulanir.
@@ -1003,7 +983,6 @@ fn bind_callbacks(app: &AppWindow) {
     });
     st.on_set_start_with_windows(|v| with_ctx(|c| c.edit(|cfg| cfg.start_with_windows = v)));
     st.on_set_auto_update(|v| with_ctx(|c| c.edit(|cfg| cfg.updates = if v { UpdateMode::Auto } else { UpdateMode::Notify })));
-    st.on_set_beta_updates(|v| with_ctx(|c| c.edit(|cfg| cfg.update_channel = if v { UpdateChannel::Beta } else { UpdateChannel::Stable })));
     st.on_check_update(|| {
         with_ctx(|c| {
             let Some(client) = c.client() else {
@@ -1150,12 +1129,5 @@ mod tests {
         ctx.pending_connect.set(Some(Instant::now() - MAX_PENDING));
         ctx.apply_engine();
         assert_eq!(power(), PowerState::Off, "yanit gelmezse gercek durum gosterilmeli");
-    }
-
-    #[test]
-    fn uptime_texts() {
-        assert_eq!(uptime_text(Some(now_ms())), "Az önce bağlandı");
-        assert_eq!(uptime_text(Some(now_ms() - 5 * 60_000)), "5 dakikadır korumalı");
-        assert_eq!(uptime_text(Some(now_ms() - 125 * 60_000)), "2 sa 5 dk'dır korumalı");
     }
 }

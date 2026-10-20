@@ -2,7 +2,7 @@
 //! GitHub surum listesinden aday secme, imzali manifest bicimi.
 //!
 //! Her surumde uc dosya bulunur:
-//!   GoodbyeDPI-UI-3-Setup.exe   kurulum paketi
+//!   DPI-UI-Setup.exe            kurulum paketi (3.0.0 oncesi adi GoodbyeDPI-UI-3-Setup.exe)
 //!   update.json                 {"version", "file", "size", "sha256"}
 //!   update.json.sig             update.json'un Ed25519 imzasi (onaltilik metin)
 //! Manifest imzalidir ve surumu da icerir: eski bir paket "yeni surum" diye sunulamaz,
@@ -16,7 +16,9 @@ pub const REPO: &str = "unsalable/dpi-ui";
 pub const RELEASES_API: &str = "https://api.github.com/repos/unsalable/dpi-ui/releases?per_page=20";
 pub const RELEASES_PAGE: &str = "https://github.com/unsalable/dpi-ui/releases";
 pub const SOURCE_PAGE: &str = "https://github.com/unsalable/dpi-ui";
-pub const INSTALLER_NAME: &str = "GoodbyeDPI-UI-3-Setup.exe";
+pub const INSTALLER_NAME: &str = "DPI-UI-Setup.exe";
+/// Eski ad: 3.0.0-alpha.1 bu adi arar; gecis surumunde paket bu adla da yayinlanir.
+pub const LEGACY_INSTALLER_NAME: &str = "GoodbyeDPI-UI-3-Setup.exe";
 pub const MANIFEST_NAME: &str = "update.json";
 pub const SIGNATURE_NAME: &str = "update.json.sig";
 
@@ -147,7 +149,7 @@ pub fn pick(current: &Version, releases: &[Release], include_prerelease: bool) -
             }
             let url = |name: &str| r.assets.iter().find(|a| a.name.eq_ignore_ascii_case(name)).map(|a| a.browser_download_url.clone());
             Some(Candidate {
-                installer_url: url(INSTALLER_NAME)?,
+                installer_url: url(INSTALLER_NAME).or_else(|| url(LEGACY_INSTALLER_NAME))?,
                 manifest_url: url(MANIFEST_NAME)?,
                 signature_url: url(SIGNATURE_NAME)?,
                 notes: r.body.clone().unwrap_or_default(),
@@ -185,7 +187,7 @@ impl Manifest {
         if v != *expected {
             return Err(format!("manifest sürümü ({v}) yayın etiketiyle ({expected}) eşleşmiyor"));
         }
-        if !self.file.eq_ignore_ascii_case(INSTALLER_NAME) {
+        if !self.file.eq_ignore_ascii_case(INSTALLER_NAME) && !self.file.eq_ignore_ascii_case(LEGACY_INSTALLER_NAME) {
             return Err("manifest beklenmeyen bir dosyayı gösteriyor".into());
         }
         if self.sha256.len() != 64 || !self.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -287,6 +289,18 @@ mod tests {
         assert_eq!(c.version, v("3.0.0-alpha.2"));
         assert!(c.manifest_url.ends_with("/v3.0.0-alpha.2/update.json"));
         assert!(pick(&v("3.0.0-alpha.2"), &rels, false).is_none(), "ayni surum guncelleme degil");
+    }
+
+    #[test]
+    fn accepts_legacy_installer_name() {
+        let rels = vec![release("v3.0.0", false, &[LEGACY_INSTALLER_NAME, MANIFEST_NAME, SIGNATURE_NAME])];
+        let c = pick(&v("3.0.0-alpha.1"), &rels, false).unwrap();
+        assert!(c.installer_url.ends_with(LEGACY_INSTALLER_NAME));
+        // Iki ad da varsa yenisi secilir.
+        let both = vec![release("v3.0.1", false, &[LEGACY_INSTALLER_NAME, INSTALLER_NAME, MANIFEST_NAME, SIGNATURE_NAME])];
+        assert!(pick(&v("3.0.0"), &both, false).unwrap().installer_url.ends_with(INSTALLER_NAME));
+        let m = Manifest { version: "3.0.0".into(), file: LEGACY_INSTALLER_NAME.into(), size: 1, sha256: "b".repeat(64) };
+        assert!(m.check(&v("3.0.0")).is_ok());
     }
 
     #[test]

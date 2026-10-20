@@ -40,9 +40,9 @@ fn main() {
     let mut res = winresource::WindowsResource::new();
     res.set_icon(ico.to_str().unwrap());
     res.set_manifest(MANIFEST);
-    res.set("ProductName", "GoodbyeDPI UI 3");
-    res.set("FileDescription", "GoodbyeDPI UI 3");
-    res.set("CompanyName", "GoodbyeDPI UI");
+    res.set("ProductName", "DPI UI");
+    res.set("FileDescription", "DPI UI");
+    res.set("CompanyName", "DPI UI");
     res.set("LegalCopyright", "MIT");
     res.set("OriginalFilename", "GoodbyeDPI3.exe");
     if let Err(e) = res.compile() {

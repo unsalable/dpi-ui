@@ -1,4 +1,4 @@
-# GoodbyeDPI UI 3 - yayin betigi
+# DPI UI - yayin betigi
 # 1) release derleme  2) dosyalari build\app'e toplama  3) simge  4) Inno Setup
 # Kullanim: powershell -ExecutionPolicy Bypass -File publish.ps1
 # Not: dosya bilerek yalnizca ASCII karakter icerir.
@@ -15,7 +15,7 @@ New-Item -ItemType Directory -Force "$app\licenses" | Out-Null
 Copy-Item "target\release\GoodbyeDPI3.exe", "target\release\GoodbyeDPI3-Service.exe" $app
 Copy-Item "third_party\windivert\2.2\WinDivert.dll", "third_party\windivert\2.2\WinDivert64.sys" $app
 Copy-Item "third_party\windivert\2.2\LICENSE.txt" "$app\licenses\WinDivert-LICENSE.txt"
-Copy-Item "LICENSE" "$app\licenses\GoodbyeDPI-UI-3-LICENSE.txt"
+Copy-Item "LICENSE" "$app\licenses\DPI-UI-LICENSE.txt"
 Copy-Item "THIRD_PARTY_NOTICES.md" "$app\licenses\THIRD_PARTY_NOTICES.md"
 Copy-Item "third_party\licenses\*" "$app\licenses\"
 
@@ -28,6 +28,6 @@ if (-not $iscc) { throw "Inno Setup 6 bulunamadi" }
 & $iscc /Q "installer\setup.iss"
 if ($LASTEXITCODE -ne 0) { throw "kurulum paketi olusturulamadi" }
 
-Get-ChildItem $app, "build\GoodbyeDPI-UI-3-Setup.exe" -File | ForEach-Object {
+Get-ChildItem $app, "build\DPI-UI-Setup.exe" -File | ForEach-Object {
     "{0,-28} {1,8:N2} MB  {2}" -f $_.Name, ($_.Length / 1MB), (Get-FileHash $_.FullName -Algorithm SHA256).Hash.Substring(0, 16)
 }

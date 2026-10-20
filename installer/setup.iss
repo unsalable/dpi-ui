@@ -1,15 +1,15 @@
-﻿; GoodbyeDPI UI 3 - Inno Setup kurulum betigi
+﻿; DPI UI - Inno Setup kurulum betigi
 ;
 ; Derleme: powershell -File publish.ps1   (once dosyalari build\app'e toplar, sonra ISCC calistirir)
-; Cikti:   build\GoodbyeDPI-UI-3-Setup.exe
+; Cikti:   build\DPI-UI-Setup.exe
 ;
 ; Kurulum yonetici ister: motor bir Windows hizmetidir ve WinDivert surucusunu yukler.
 ; Arayuz ise kurulumdan sonra normal kullanici olarak acilir (runasoriginaluser);
 ; gunluk kullanimda UAC hic sorulmaz.
 
-#define AppName "GoodbyeDPI UI 3"
+#define AppName "DPI UI"
 #define AppVersion "3.0.0-alpha.1"
-#define AppPublisher "GoodbyeDPI UI"
+#define AppPublisher "DPI UI"
 #define AppExe "GoodbyeDPI3.exe"
 #define ServiceExe "GoodbyeDPI3-Service.exe"
 #define ServiceName "GoodbyeDPI3"
@@ -31,7 +31,7 @@ DisableReadyPage=yes
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 OutputDir=..\build
-OutputBaseFilename=GoodbyeDPI-UI-3-Setup
+OutputBaseFilename=DPI-UI-Setup
 SetupIconFile=..\build\app.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -55,8 +55,8 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 tr.V1Found=GoodbyeDPI UI'ın eski sürümü (2.x) bu bilgisayarda kurulu.%n%nİki DPI aracı aynı anda çalışırsa bağlantılar bozulabilir. Eski sürüm şimdi kaldırılsın mı?%n%nAyarların (sağlayıcı, özel yöntemler, özel DNS) yeni sürüme otomatik aktarılır.
 en.V1Found=An older GoodbyeDPI UI (2.x) is installed.%n%nRunning two DPI tools at once can break connections. Uninstall the old version now?%n%nYour settings will be imported into the new version.
-tr.Launch=GoodbyeDPI UI 3'ü aç
-en.Launch=Open GoodbyeDPI UI 3
+tr.Launch=DPI UI uygulamasını aç
+en.Launch=Open DPI UI
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -69,6 +69,12 @@ Source: "{#SourceDir}\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\WinDivert.dll"; DestDir: "{app}"; Flags: restartreplace uninsrestartdelete
 Source: "{#SourceDir}\WinDivert64.sys"; DestDir: "{app}"; Flags: restartreplace uninsrestartdelete
 Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs
+
+[InstallDelete]
+; 3.0.0 oncesi ad (GoodbyeDPI UI 3) ile olusturulmus kisayollar.
+Type: filesandordirs; Name: "{commonprograms}\GoodbyeDPI UI 3"
+Type: files; Name: "{commondesktop}\GoodbyeDPI UI 3.lnk"
+Type: files; Name: "{userdesktop}\GoodbyeDPI UI 3.lnk"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
