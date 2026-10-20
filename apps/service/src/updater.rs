@@ -362,14 +362,26 @@ fn file_matches(path: &Path, m: &Manifest) -> bool {
 
 /// Kurulmus (ya da eskimis) indirmeleri temizler.
 fn cleanup_installed(current: &Version) {
+    cleanup_installed_in(&shared::paths::update_dir(), current);
+}
+
+/// Sessiz kurulumdan hemen sonra yeniden acilan tepsi denetim ister; kurulum sureci o an
+/// paketi hala tutuyor olabilir. Paket silinemezse not birakilir, sonraki denetim yeniden dener.
+fn cleanup_installed_in(dir: &Path, current: &Version) {
     // 3.0.0 oncesi surumlerin indirdigi eski adli paket artik hic kullanilmaz.
-    let _ = std::fs::remove_file(shared::paths::update_dir().join(update::LEGACY_INSTALLER_NAME));
-    let marker = shared::paths::update_dir().join("version.txt");
+    let _ = std::fs::remove_file(dir.join(update::LEGACY_INSTALLER_NAME));
+    let marker = dir.join("version.txt");
     if let Some(v) = std::fs::read_to_string(&marker).ok().and_then(|t| Version::parse(&t)) {
-        if v <= *current {
-            let _ = std::fs::remove_file(shared::paths::update_installer());
+        if v <= *current && removed(&dir.join(update::INSTALLER_NAME)) {
             let _ = std::fs::remove_file(&marker);
         }
+    }
+}
+
+fn removed(path: &Path) -> bool {
+    match std::fs::remove_file(path) {
+        Ok(()) => true,
+        Err(e) => e.kind() == std::io::ErrorKind::NotFound,
     }
 }
 
@@ -442,6 +454,33 @@ mod tests {
         assert!(installed("3.0.4", "3.0.5"));
         assert!(!installed("3.0.4", "3.0.3"), "eski servis geri geldiyse kurulum tutmadi");
         assert!(!installed("bozuk", "3.0.4"));
+    }
+
+    /// Kurulum sureci paketi tutarken not silinmez; paket serbest kalinca ikisi de temizlenir.
+    /// Daha yeni bir surumun paketi (henuz kurulmamis) hic silinmez.
+    #[test]
+    fn installer_is_cleaned_up_once_released() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = std::env::temp_dir().join(format!("gdpi3-temizlik-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (installer, marker) = (dir.join(update::INSTALLER_NAME), dir.join("version.txt"));
+        std::fs::write(&installer, b"paket").unwrap();
+        std::fs::write(&marker, "3.0.5").unwrap();
+        let current = Version::parse("3.0.5").unwrap();
+
+        // FILE_SHARE_READ: silmeye izin vermeyen acik tutamac (calisan kurulum gibi).
+        let held = std::fs::OpenOptions::new().read(true).share_mode(1).open(&installer).unwrap();
+        cleanup_installed_in(&dir, &current);
+        assert!(installer.exists() && marker.exists(), "paket silinemediyse not kalmali");
+        drop(held);
+        cleanup_installed_in(&dir, &current);
+        assert!(!installer.exists() && !marker.exists(), "serbest kalinca ikisi de silinmeli");
+
+        std::fs::write(&installer, b"paket").unwrap();
+        std::fs::write(&marker, "3.0.6").unwrap();
+        cleanup_installed_in(&dir, &current);
+        assert!(installer.exists() && marker.exists(), "kurulmamis yeni surum silinmemeli");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
