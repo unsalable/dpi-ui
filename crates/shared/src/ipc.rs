@@ -30,6 +30,8 @@ pub enum Request {
     ForgetLearned { host: String },
     ClearLearned,
     GetLogs,
+    /// Hazir sifreli DNS saglayicilarinin bu hattaki hizini olc (1-3 sn surer).
+    BenchDns,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +83,17 @@ pub struct LearnedHost {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BenchEntry {
+    pub id: String,
+    pub name: String,
+    pub ok: u32,
+    pub total: u32,
+    pub median_ms: Option<u32>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Conflict {
     /// Cakisan surecin adi (or. winws.exe).
     pub process: String,
@@ -106,6 +119,7 @@ pub enum Response {
     State { state: Box<StateSnapshot> },
     Stats { stats: StatsSnapshot },
     Logs { lines: Vec<String> },
+    DnsBench { results: Vec<BenchEntry> },
     Error { message: String },
 }
 

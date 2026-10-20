@@ -1,0 +1,368 @@
+// Sayfalarin ortak yapi taslari: dugme, gezinme satiri, zengin secici, alan adi
+// listesi duzenleyicisi, sayfa basligi, bildirim.
+
+import { Theme, Metrics, Motion } from "tokens.slint";
+import { Icons } from "icons.slint";
+import { Icon, IconButton, Field } from "components.slint";
+import { Choice, HostItem } from "state.slint";
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> busy: false;
+    callback clicked();
+
+    height: 34px;
+    min-width: label.preferred-width + 28px;
+    border-radius: Metrics.radius-sm + 2px;
+    background: primary
+        ? (ta.pressed ? Theme.accent.darker(0.15) : ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent)
+        : (ta.pressed ? Theme.stroke : ta.has-hover ? Theme.surface-2 : Theme.surface);
+    border-width: primary ? 0 : 1px;
+    border-color: Theme.stroke;
+    animate background { duration: Motion.fast; }
+
+    label := Text {
+        text: root.busy ? "…" : root.text;
+        color: root.primary ? Theme.on-accent : Theme.text;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if (!root.busy) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component PageHeader inherits Rectangle {
+    in property <string> title;
+    callback back();
+    height: 48px;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 16px;
+        spacing: 4px;
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.arrow-left;
+                clicked => {
+                    root.back();
+                }
+            }
+        }
+
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 17px;
+            font-weight: 650;
+            vertical-alignment: center;
+        }
+    }
+}
+
+/// Ayarlar menusundeki gezinme satiri: simge, baslik, alt satir, ok.
+export component NavRow inherits Rectangle {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> value;
+    callback clicked();
+
+    height: 58px;
+    border-radius: Metrics.radius;
+    background: ta.has-hover ? Theme.surface-2 : Theme.surface-2.with-alpha(0);
+    animate background { duration: Motion.fast; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 34px;
+                height: 34px;
+                border-radius: 10px;
+                background: Theme.accent.with-alpha(0.12);
+                Icon {
+                    commands: root.icon;
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    tint: Theme.accent;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 1px;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 600;
+            }
+
+            Text {
+                text: root.value;
+                color: Theme.text-muted;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                commands: Icons.chevron-right;
+                width: 16px;
+                height: 16px;
+                tint: Theme.text-muted;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+/// Basligi ve aciklamasi olan seceneklerden birini secen liste (her zaman acik).
+export component ChoiceList inherits VerticalLayout {
+    in property <[Choice]> options;
+    in property <int> current-index;
+    callback selected(int);
+    spacing: 4px;
+
+    for option[index] in root.options: Rectangle {
+        property <bool> active: index == root.current-index;
+        min-height: 54px;
+        border-radius: Metrics.radius;
+        background: active ? Theme.accent.with-alpha(0.10) : ta.has-hover ? Theme.surface-2 : Theme.surface-2.with-alpha(0);
+        border-width: 1px;
+        border-color: active ? Theme.accent.with-alpha(0.55) : Theme.stroke.with-alpha(0);
+        animate background, border-color { duration: Motion.snap; }
+
+        HorizontalLayout {
+            padding: 10px;
+            padding-left: 12px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    border-width: active ? 5px : 1.5px;
+                    border-color: active ? Theme.accent : Theme.text-muted;
+                    animate border-width { duration: Motion.base; easing: cubic-bezier(0.34, 1.56, 0.64, 1); }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: option.title;
+                    color: Theme.text;
+                    font-size: 13px;
+                    font-weight: active ? 650 : 500;
+                }
+
+                if option.subtitle != "": Text {
+                    text: option.subtitle;
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                    overflow: elide;
+                }
+            }
+        }
+
+        ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.selected(index);
+            }
+        }
+    }
+}
+
+/// Alan adi listesi: ekleme alani + silinebilir satirlar.
+export component HostEditor inherits VerticalLayout {
+    in property <[HostItem]> items;
+    in property <string> placeholder: "ornek.com";
+    in property <string> empty-text: "Henüz bir şey eklenmedi.";
+    in property <bool> can-add: true;
+    callback add(string) -> string;
+    callback remove(string);
+    property <string> error;
+    spacing: 6px;
+
+    if root.can-add: HorizontalLayout {
+        spacing: 8px;
+        input := Field {
+            horizontal-stretch: 1;
+            placeholder: root.placeholder;
+            edited => {
+                root.error = "";
+            }
+        }
+
+        Button {
+            text: "Ekle";
+            clicked => {
+                root.error = root.add(input.text);
+                if (root.error == "") {
+                    input.text = "";
+                }
+            }
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+
+    if root.items.length == 0: Text {
+        text: root.empty-text;
+        color: Theme.text-muted;
+        font-size: 12px;
+    }
+
+    for item in root.items: Rectangle {
+        height: 38px;
+        border-radius: Metrics.radius-sm + 2px;
+        background: Theme.surface-2;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 4px;
+            spacing: 6px;
+            Text {
+                text: item.name;
+                color: Theme.text;
+                font-size: 13px;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+
+            if item.note != "": Text {
+                text: item.note;
+                color: Theme.text-muted;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.close;
+                    width: 28px;
+                    height: 26px;
+                    danger-hover: true;
+                    clicked => {
+                        root.remove(item.key);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Ekranin altinda kisa sureli bildirim (her yeni seri numarasinda yeniden gorunur).
+export component Toast inherits Rectangle {
+    in property <string> text;
+    in property <bool> error;
+    in property <int> serial;
+    property <bool> shown: false;
+    property <int> seen: 0;
+
+    changed serial => {
+        self.shown = true;
+        self.seen = self.serial;
+        hide-timer.running = true;
+    }
+
+    hide-timer := Timer {
+        interval: 3800ms;
+        running: false;
+        triggered => {
+            root.shown = false;
+            self.running = false;
+        }
+    }
+
+    height: content.preferred-height + 20px;
+    border-radius: Metrics.radius;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: root.error ? Theme.danger.with-alpha(0.6) : Theme.accent.with-alpha(0.5);
+    drop-shadow-blur: 16px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: #00000055;
+    opacity: root.shown ? 1 : 0;
+    animate opacity { duration: Motion.base; }
+
+    content := HorizontalLayout {
+        padding: 10px;
+        padding-left: 12px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.error ? Theme.danger : Theme.accent;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 12px;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        enabled: root.shown;
+        clicked => {
+            root.shown = false;
+        }
+    }
+}
+
+export component SectionLabel inherits Text {
+    color: Theme.text-muted;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.6px;
+}
+
+export component Hint inherits Text {
+    color: Theme.text-muted;
+    font-size: 11px;
+    wrap: word-wrap;
+}

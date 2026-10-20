@@ -151,6 +151,19 @@ impl Controller {
                 Response::Ok
             }
             Request::GetLogs => Response::Logs { lines: crate::log::lines() },
+            Request::BenchDns => Response::DnsBench {
+                results: crate::dns::bench::run_all()
+                    .into_iter()
+                    .map(|r| shared::ipc::BenchEntry {
+                        id: r.id,
+                        name: r.name,
+                        ok: r.ok,
+                        total: r.total,
+                        median_ms: r.median_ms,
+                        error: r.error,
+                    })
+                    .collect(),
+            },
         }
     }
 

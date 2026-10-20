@@ -1,0 +1,116 @@
+// Arayuzun tek durum kaynagi. Rust tarafi servisten gelen olaylarla doldurur;
+// sayfalar yalnizca bunu okur ve geri cagrilari tetikler.
+
+import { PowerState } from "orb.slint";
+
+export struct Choice {
+    id: string,
+    title: string,
+    subtitle: string,
+}
+
+export struct HostItem {
+    /// Silme icin anahtar (alan adi ya da ozel DNS kimligi).
+    key: string,
+    name: string,
+    note: string,
+}
+
+export struct CategoryItem {
+    id: string,
+    title: string,
+    checked: bool,
+}
+
+export struct BenchItem {
+    id: string,
+    name: string,
+    ms: int,
+    ok: bool,
+    ratio: float,
+    note: string,
+}
+
+export global AppState {
+    // ---------------------------------------------------------------- durum
+    in-out property <PowerState> power: PowerState.off;
+    in-out property <bool> service-missing: false;
+    in-out property <string> status-title: "Kapalı";
+    in-out property <string> status-sub: "Açmak için küreye dokun";
+    /// Bos degilse ana ekranda uyari seridi.
+    in-out property <string> banner;
+    in-out property <string> method-name: "Varsayılan";
+    in-out property <string> dns-name: "Cloudflare DoH";
+    in-out property <string> stats-line;
+
+    // ---------------------------------------------------------------- baglanti
+    in-out property <[Choice]> isps;
+    in-out property <[string]> isp-names;
+    in-out property <int> isp-index;
+    in-out property <[Choice]> methods;
+    in-out property <int> method-index;
+    in-out property <string> method-summary;
+
+    // ---------------------------------------------------------------- dns
+    /// 0 = kapali, 1 = sifreli, 2 = yonlendirme
+    in-out property <int> dns-mode: 1;
+    in-out property <[Choice]> dns-providers;
+    in-out property <int> dns-index;
+    in-out property <[HostItem]> custom-dns;
+    in-out property <bool> dns-fallback: true;
+    in-out property <bool> dns-skip-vpn: true;
+    in-out property <[BenchItem]> bench;
+    in-out property <bool> bench-running;
+
+    // ---------------------------------------------------------------- siteler
+    /// 0 = akilli liste, 1 = tum trafik
+    in-out property <int> scope-mode;
+    in-out property <bool> learning: true;
+    in-out property <[HostItem]> targets;
+    in-out property <[HostItem]> excluded;
+    in-out property <[HostItem]> learned;
+    in-out property <[CategoryItem]> categories;
+
+    // ---------------------------------------------------------------- genel
+    in-out property <bool> start-with-windows: true;
+    in-out property <bool> auto-connect: true;
+    in-out property <bool> tray-at-login: true;
+    in-out property <bool> close-to-tray: true;
+    /// 0 = sistem, 1 = koyu, 2 = acik
+    in-out property <int> theme-index;
+    in-out property <string> version;
+
+    // ---------------------------------------------------------------- bildirim
+    in-out property <string> toast;
+    in-out property <bool> toast-error;
+    in-out property <int> toast-serial;
+
+    callback power-toggle();
+    callback start-service();
+    callback select-isp(int);
+    callback select-method(int);
+    callback set-dns-mode(int);
+    callback select-dns(int);
+    callback set-dns-fallback(bool);
+    callback set-dns-skip-vpn(bool);
+    callback add-custom-dns(string, string, string) -> string;
+    callback remove-custom-dns(string);
+    callback run-bench();
+    callback use-bench(string);
+    callback set-scope-mode(int);
+    callback set-learning(bool);
+    callback toggle-category(string, bool);
+    callback add-target(string) -> string;
+    callback remove-target(string);
+    callback add-excluded(string) -> string;
+    callback remove-excluded(string);
+    callback forget-learned(string);
+    callback clear-learned();
+    callback set-start-with-windows(bool);
+    callback set-auto-connect(bool);
+    callback set-tray-at-login(bool);
+    callback set-close-to-tray(bool);
+    callback select-theme(int);
+    callback open-url(string);
+    callback open-logs();
+}

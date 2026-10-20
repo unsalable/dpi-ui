@@ -15,3 +15,4 @@ codegen-units = 1
 strip = true
 # Motor paket basina catch_unwind ile korunuyor; unwind kalmali.
 panic = "unwind"
+

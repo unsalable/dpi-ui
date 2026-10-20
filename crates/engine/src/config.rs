@@ -138,6 +138,13 @@ impl DpiConfig {
         self.fake_ttl || self.fake_wrong_checksum || self.fake_wrong_seq || self.fake_md5sig
     }
 
+    /// Yalnizca yontemi ayirt eden kisim (sahte paket + bolme); listelerde tek satir.
+    pub fn short_summary(&self) -> String {
+        let full = self.summary();
+        let parts: Vec<&str> = full.split(" · ").filter(|p| *p != "QUIC engeli" && *p != "Discord ses").collect();
+        if parts.is_empty() { "Yalnızca QUIC engeli ve Discord ses desteği".to_owned() } else { parts.join(" · ") }
+    }
+
     /// Listede gorunen kisa ozet.
     pub fn summary(&self) -> String {
         let mut parts: Vec<String> = Vec::with_capacity(4);

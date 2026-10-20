@@ -1,0 +1,730 @@
+// Ekranlar: ana sayfa, ayarlar menusu ve alt sayfalar.
+
+import { AboutSlint } from "std-widgets.slint";
+import { Theme, Metrics, Motion } from "tokens.slint";
+import { Icons } from "icons.slint";
+import { Orb, PowerState } from "orb.slint";
+import { Icon, Chip, Card, SettingRow, Select, Field, Segmented, Toggle } from "components.slint";
+import { Button, PageHeader, NavRow, ChoiceList, HostEditor, SectionLabel, Hint } from "widgets.slint";
+import { AppState } from "state.slint";
+
+// ================================================================== ana sayfa
+
+export component HomePage inherits Rectangle {
+    callback open-method();
+    callback open-dns();
+    background: Theme.bg;
+
+    VerticalLayout {
+        padding: 24px;
+        padding-top: 4px;
+
+        if AppState.banner != "": Rectangle {
+            height: banner-row.preferred-height + 16px;
+            border-radius: Metrics.radius;
+            background: Theme.warn.with-alpha(0.12);
+            border-width: 1px;
+            border-color: Theme.warn.with-alpha(0.4);
+            banner-row := HorizontalLayout {
+                padding: 8px;
+                padding-left: 10px;
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        commands: Icons.warn;
+                        width: 16px;
+                        height: 16px;
+                        tint: Theme.warn;
+                    }
+                }
+
+                Text {
+                    text: AppState.banner;
+                    color: Theme.text;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            Orb {
+                state: AppState.power;
+                clicked => {
+                    if (AppState.service-missing) {
+                        AppState.start-service();
+                    } else {
+                        AppState.power-toggle();
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 24px;
+        }
+
+        Text {
+            text: AppState.status-title;
+            color: AppState.power == PowerState.on ? Theme.accent : AppState.power == PowerState.error ? Theme.danger : Theme.text;
+            font-size: 24px;
+            font-weight: 650;
+            horizontal-alignment: center;
+            animate color { duration: Motion.base; }
+        }
+
+        Rectangle {
+            height: 4px;
+        }
+
+        Text {
+            text: AppState.status-sub;
+            color: Theme.text-muted;
+            font-size: 13px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            height: 28px;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 8px;
+            Chip {
+                label: "Yöntem";
+                value: AppState.method-name;
+                icon: Icons.bolt;
+                clicked => {
+                    root.open-method();
+                }
+            }
+
+            Chip {
+                label: "DNS";
+                value: AppState.dns-name;
+                icon: Icons.globe;
+                clicked => {
+                    root.open-dns();
+                }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        Text {
+            text: AppState.stats-line;
+            color: Theme.text-muted;
+            font-size: 11px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// ================================================================== ayarlar menusu
+
+export component SettingsMenu inherits Rectangle {
+    callback back();
+    callback open(int);
+    background: Theme.bg;
+
+    VerticalLayout {
+        PageHeader {
+            title: "Ayarlar";
+            back => {
+                root.back();
+            }
+        }
+
+        VerticalLayout {
+            padding: 12px;
+            padding-top: 0;
+            spacing: 2px;
+            alignment: start;
+            NavRow {
+                icon: Icons.bolt;
+                title: "Bağlantı yöntemi";
+                value: AppState.method-name;
+                clicked => {
+                    root.open(1);
+                }
+            }
+
+            NavRow {
+                icon: Icons.globe;
+                title: "DNS";
+                value: AppState.dns-name;
+                clicked => {
+                    root.open(2);
+                }
+            }
+
+            NavRow {
+                icon: Icons.list;
+                title: "Siteler";
+                value: AppState.scope-mode == 0 ? "Akıllı liste" : "Tüm trafik";
+                clicked => {
+                    root.open(3);
+                }
+            }
+
+            NavRow {
+                icon: Icons.gear;
+                title: "Genel";
+                value: AppState.start-with-windows ? "Windows ile başlar" : "Elle başlatılır";
+                clicked => {
+                    root.open(4);
+                }
+            }
+
+            NavRow {
+                icon: Icons.palette;
+                title: "Görünüm";
+                value: AppState.theme-index == 0 ? "Sistem teması" : AppState.theme-index == 1 ? "Koyu" : "Açık";
+                clicked => {
+                    root.open(5);
+                }
+            }
+
+            NavRow {
+                icon: Icons.info;
+                title: "Hakkında";
+                value: "Sürüm " + AppState.version;
+                clicked => {
+                    root.open(6);
+                }
+            }
+        }
+    }
+}
+
+// Alt sayfa iskeleti: baslik + kaydirilabilir icerik.
+component SubPage inherits Rectangle {
+    in property <string> title;
+    callback back();
+    background: Theme.bg;
+
+    VerticalLayout {
+        PageHeader {
+            title: root.title;
+            back => {
+                root.back();
+            }
+        }
+
+        Flickable {
+            VerticalLayout {
+                alignment: start;
+                padding: 16px;
+                padding-top: 0;
+                spacing: 12px;
+                @children
+            }
+        }
+    }
+}
+
+// ================================================================== yontem
+
+export component MethodPage inherits SubPage {
+    title: "Bağlantı yöntemi";
+
+    Card {
+        heading: "İNTERNET SAĞLAYICI";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 6px;
+            Select {
+                options: AppState.isp-names;
+                current-index: AppState.isp-index;
+                selected(index) => {
+                    AppState.select-isp(index);
+                }
+            }
+
+            Hint {
+                text: AppState.isps[AppState.isp-index].subtitle;
+            }
+        }
+    }
+
+    Card {
+        heading: "YÖNTEM";
+        VerticalLayout {
+            padding-top: 6px;
+            ChoiceList {
+                options: AppState.methods;
+                current-index: AppState.method-index;
+                selected(index) => {
+                    AppState.select-method(index);
+                }
+            }
+        }
+    }
+
+    Hint {
+        text: "Seçili sağlayıcı için önerilen yöntem listenin başındadır. Bir site açılmazsa sıradakini dene; değişiklik hemen uygulanır.";
+    }
+}
+
+// Ozel DNS ekleme formu: ad, adres ve (sifreli adresler icin) sunucu IP'si.
+component CustomDnsForm inherits VerticalLayout {
+    property <string> error;
+    padding-top: 6px;
+    spacing: 8px;
+
+    Hint {
+        text: "IP (1.2.3.4 ya da 1.2.3.4:5353) ya da şifreli adres (https://… / tls://…) gir. Şifreli adreslerde sunucunun IP'si de gerekir.";
+    }
+
+    name := Field {
+        placeholder: "Ad (örn. Ev DNS)";
+        edited => {
+            root.error = "";
+        }
+    }
+
+    address := Field {
+        placeholder: "Adres";
+        edited => {
+            root.error = "";
+        }
+    }
+
+    bootstrap := Field {
+        placeholder: "Sunucu IP'si (yalnızca https/tls için)";
+        edited => {
+            root.error = "";
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        alignment: start;
+        Button {
+            text: "Ekle ve kullan";
+            clicked => {
+                root.error = AppState.add-custom-dns(name.text, address.text, bootstrap.text);
+                if (root.error == "") {
+                    name.text = "";
+                    address.text = "";
+                    bootstrap.text = "";
+                }
+            }
+        }
+    }
+
+    HostEditor {
+        items: AppState.custom-dns;
+        can-add: false;
+        empty-text: "Özel sunucu yok.";
+        remove(id) => {
+            AppState.remove-custom-dns(id);
+        }
+    }
+}
+
+// ================================================================== dns
+
+export component DnsPage inherits SubPage {
+    title: "DNS";
+
+    Card {
+        heading: "MOD";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 6px;
+            Segmented {
+                options: ["Kapalı", "Şifreli", "Yönlendirme"];
+                current-index: AppState.dns-mode;
+                selected(index) => {
+                    AppState.set-dns-mode(index);
+                }
+            }
+
+            Hint {
+                text: AppState.dns-mode == 0
+                    ? "Sistemin DNS ayarlarına dokunulmaz."
+                    : AppState.dns-mode == 1
+                    ? "Sorgular şifreli (DoH/DoT) gider; sağlayıcın göremez ve yönlendiremez. Ağ ayarların değişmez."
+                    : "Sorgular seçilen sunucunun standart dışı portuna yönlendirilir (eski yöntem).";
+            }
+        }
+    }
+
+    if AppState.dns-mode != 0: Card {
+        heading: "SUNUCU";
+        VerticalLayout {
+            padding-top: 6px;
+            ChoiceList {
+                options: AppState.dns-providers;
+                current-index: AppState.dns-index;
+                selected(index) => {
+                    AppState.select-dns(index);
+                }
+            }
+        }
+    }
+
+    if AppState.dns-mode == 1: Card {
+        heading: "EN HIZLI DNS";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 8px;
+            Hint {
+                text: "Her sağlayıcıya şifreli sorgular gönderip bu hattaki hızını ölçer.";
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    text: AppState.bench-running ? "Ölçülüyor…" : "Hızları ölç";
+                    primary: true;
+                    busy: AppState.bench-running;
+                    clicked => {
+                        AppState.run-bench();
+                    }
+                }
+            }
+
+            for item[i] in AppState.bench: Rectangle {
+                height: 40px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text {
+                        text: item.name;
+                        color: Theme.text;
+                        font-size: 12px;
+                        width: 96px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 8px;
+                                border-radius: 4px;
+                                background: Theme.surface-2;
+                                Rectangle {
+                                    x: 0;
+                                    width: parent.width * (item.ok ? max(0.06, item.ratio) : 1.0);
+                                    height: parent.height;
+                                    border-radius: 4px;
+                                    background: item.ok ? (i == 0 ? Theme.accent : Theme.accent-2.with-alpha(0.7)) : Theme.danger.with-alpha(0.5);
+                                    animate width { duration: 520ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: item.note;
+                        color: item.ok ? Theme.text-muted : Theme.danger;
+                        font-size: 11px;
+                        width: 54px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            text: "Kullan";
+                            height: 28px;
+                            clicked => {
+                                AppState.use-bench(item.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if AppState.dns-mode != 0: Card {
+        heading: "ÖZEL DNS";
+        CustomDnsForm { }
+    }
+
+    if AppState.dns-mode == 1: Card {
+        heading: "GÜVENLİK AĞI";
+        SettingRow {
+            title: "Ulaşılamazsa sistem DNS'ine dön";
+            subtitle: "Şifreli DNS geçici olarak erişilemezse internet kesilmez.";
+            checked: AppState.dns-fallback;
+            toggled(v) => {
+                AppState.set-dns-fallback(v);
+            }
+        }
+
+        SettingRow {
+            title: "VPN bağlıyken DNS'e dokunma";
+            subtitle: "Kurum içi adlar ve VPN'in kendi DNS'i bozulmaz.";
+            checked: AppState.dns-skip-vpn;
+            toggled(v) => {
+                AppState.set-dns-skip-vpn(v);
+            }
+        }
+    }
+}
+
+// ================================================================== siteler
+
+export component SitesPage inherits SubPage {
+    title: "Siteler";
+
+    Card {
+        heading: "KAPSAM";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 6px;
+            Segmented {
+                options: ["Akıllı liste", "Tüm trafik"];
+                current-index: AppState.scope-mode;
+                selected(index) => {
+                    AppState.set-scope-mode(index);
+                }
+            }
+
+            Hint {
+                text: AppState.scope-mode == 0
+                    ? "Yalnızca engelli bilinen sitelere uygulanır; diğer siteler, bankalar ve oyunlar hiç etkilenmez. En kararlı seçenek."
+                    : "Her HTTPS bağlantısına uygulanır. Bazı site ve oyunlarda yan etki görülebilir; aşağıdaki istisna listesini kullan.";
+            }
+        }
+    }
+
+    if AppState.scope-mode == 0: Card {
+        heading: "OTOMATİK ÖĞRENME";
+        SettingRow {
+            title: "Açılmayan siteleri kendiliğinden ekle";
+            subtitle: "Bir site DPI yüzünden yanıtsız kalırsa hemen atlatılır ve listeye eklenir.";
+            checked: AppState.learning;
+            toggled(v) => {
+                AppState.set-learning(v);
+            }
+        }
+    }
+
+    if AppState.scope-mode == 0: Card {
+        heading: "HAZIR LİSTE";
+        for cat in AppState.categories: SettingRow {
+            title: cat.title;
+            checked: cat.checked;
+            toggled(v) => {
+                AppState.toggle-category(cat.id, v);
+            }
+        }
+    }
+
+    if AppState.scope-mode == 0: Card {
+        heading: "KENDİ SİTELERİM";
+        HostEditor {
+            items: AppState.targets;
+            placeholder: "site.com (alt alanlar dahil)";
+            add(host) => {
+                return AppState.add-target(host);
+            }
+            remove(host) => {
+                AppState.remove-target(host);
+            }
+        }
+    }
+
+    if AppState.scope-mode == 0: Card {
+        heading: "ÖĞRENİLENLER";
+        HostEditor {
+            items: AppState.learned;
+            can-add: false;
+            empty-text: "Henüz öğrenilen site yok.";
+            remove(host) => {
+                AppState.forget-learned(host);
+            }
+        }
+
+        if AppState.learned.length > 0: HorizontalLayout {
+            alignment: start;
+            padding-top: 6px;
+            Button {
+                text: "Hepsini temizle";
+                clicked => {
+                    AppState.clear-learned();
+                }
+            }
+        }
+    }
+
+    Card {
+        heading: "ASLA DOKUNMA";
+        HostEditor {
+            items: AppState.excluded;
+            placeholder: "banka.com.tr";
+            empty-text: "İstisna yok.";
+            add(host) => {
+                return AppState.add-excluded(host);
+            }
+            remove(host) => {
+                AppState.remove-excluded(host);
+            }
+        }
+    }
+}
+
+// ================================================================== genel
+
+export component GeneralPage inherits SubPage {
+    title: "Genel";
+
+    Card {
+        heading: "BAŞLANGIÇ";
+        SettingRow {
+            title: "Windows açılınca motoru başlat";
+            subtitle: "Oturum açmadan önce bile korur. Arayüz kapalıyken de çalışır.";
+            checked: AppState.start-with-windows;
+            toggled(v) => {
+                AppState.set-start-with-windows(v);
+            }
+        }
+
+        SettingRow {
+            title: "Açılışta otomatik bağlan";
+            checked: AppState.auto-connect;
+            toggled(v) => {
+                AppState.set-auto-connect(v);
+            }
+        }
+
+        SettingRow {
+            title: "Oturum açılınca tepside başlat";
+            subtitle: "Tepsi simgesi yaklaşık 2 MB bellek kullanır.";
+            checked: AppState.tray-at-login;
+            toggled(v) => {
+                AppState.set-tray-at-login(v);
+            }
+        }
+    }
+
+    Card {
+        heading: "PENCERE";
+        SettingRow {
+            title: "Kapatınca tepside kal";
+            subtitle: "Pencere kapanınca tamamen bellekten çıkar; tepsi simgesi kalır.";
+            checked: AppState.close-to-tray;
+            toggled(v) => {
+                AppState.set-close-to-tray(v);
+            }
+        }
+    }
+
+    Card {
+        heading: "SORUN GİDERME";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 6px;
+            Hint {
+                text: "Motorun son kayıtlarını gösterir. Bir sorun bildirirken işe yarar.";
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    text: "Günlüğü aç";
+                    clicked => {
+                        AppState.open-logs();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ================================================================== gorunum
+
+export component AppearancePage inherits SubPage {
+    title: "Görünüm";
+
+    Card {
+        heading: "TEMA";
+        VerticalLayout {
+            padding-top: 6px;
+            Segmented {
+                options: ["Sistem", "Koyu", "Açık"];
+                current-index: AppState.theme-index;
+                selected(index) => {
+                    AppState.select-theme(index);
+                }
+            }
+        }
+    }
+
+    Hint {
+        text: "Animasyonlar yalnızca bir şey değiştiğinde çalışır; pencere boşta beklerken işlemci kullanılmaz. Windows'ta animasyonlar kapalıysa geçişler kısalır.";
+    }
+}
+
+// ================================================================== hakkinda
+
+export component AboutPage inherits SubPage {
+    title: "Hakkında";
+
+    Card {
+        heading: "GOODBYEDPI UI 3";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 6px;
+            Text {
+                text: "Sürüm " + AppState.version;
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 600;
+            }
+
+            Hint {
+                text: "DPI atlatma aracı. Motor ayrı bir Windows hizmeti olarak çalışır; arayüz kapalıyken bellekte yer tutmaz.";
+            }
+        }
+    }
+
+    Card {
+        heading: "TEŞEKKÜRLER";
+        VerticalLayout {
+            padding-top: 6px;
+            spacing: 4px;
+            Hint {
+                text: "GoodbyeDPI (ValdikSS), zapret (bol-van) ve SplitWire-Turkey (cagritaskn) projelerinin fikirleri üzerine kurulmuştur.";
+            }
+
+            Hint {
+                text: "WinDivert (basil00) — LGPL-3.0. Arayüz Slint ile yapılmıştır.";
+            }
+        }
+    }
+
+    Rectangle {
+        height: 120px;
+        AboutSlint {
+            width: 100%;
+            height: 100%;
+        }
+    }
+}

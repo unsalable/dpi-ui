@@ -1,9 +1,12 @@
 ﻿import { Theme, Metrics, Motion } from "tokens.slint";
 import { Icons } from "icons.slint";
-import { Orb, PowerState } from "orb.slint";
-import { IconButton, Chip, Card, SettingRow, Select, Field, Segmented, Icon } from "components.slint";
+import { PowerState } from "orb.slint";
+import { IconButton } from "components.slint";
+import { Toast } from "widgets.slint";
+import { AppState, Choice, HostItem, BenchItem, CategoryItem } from "state.slint";
+import { HomePage, SettingsMenu, MethodPage, DnsPage, SitesPage, GeneralPage, AppearancePage, AboutPage } from "pages.slint";
 
-export { PowerState, Theme }
+export { PowerState, Theme, AppState, Choice, HostItem, BenchItem, CategoryItem }
 
 component TitleBar inherits Rectangle {
     callback drag();
@@ -36,7 +39,8 @@ component TitleBar inherits Rectangle {
                     width: 10px;
                     height: 10px;
                     border-radius: 5px;
-                    background: Theme.accent;
+                    background: AppState.power == PowerState.on ? Theme.accent : AppState.power == PowerState.error ? Theme.danger : Theme.text-muted;
+                    animate background { duration: Motion.base; }
                 }
             }
 
@@ -100,97 +104,6 @@ component TitleBar inherits Rectangle {
     }
 }
 
-component SettingsPage inherits Rectangle {
-    callback back();
-    in-out property <int> theme-index: 1;
-    callback theme-selected(int);
-
-    background: Theme.bg;
-
-    VerticalLayout {
-        HorizontalLayout {
-            height: 44px;
-            padding-left: 8px;
-            padding-right: 16px;
-            spacing: 4px;
-            VerticalLayout {
-                alignment: center;
-                IconButton {
-                    icon: Icons.arrow-left;
-                    clicked => {
-                        root.back();
-                    }
-                }
-            }
-
-            Text {
-                text: "Ayarlar";
-                color: Theme.text;
-                font-size: 16px;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-        }
-
-        Flickable {
-            VerticalLayout {
-                alignment: start;
-                padding: 16px;
-                padding-top: 4px;
-                spacing: 12px;
-
-                Card {
-                    heading: "GENEL";
-                    SettingRow {
-                        title: "Windows açılınca motoru başlat";
-                        subtitle: "Oturum açmadan önce bile korur.";
-                        checked: true;
-                    }
-
-                    SettingRow {
-                        title: "Açılışta otomatik bağlan";
-                        checked: true;
-                    }
-
-                    SettingRow {
-                        title: "Kapatınca tepsiye küçült";
-                        checked: true;
-                    }
-                }
-
-                Card {
-                    heading: "DNS";
-                    VerticalLayout {
-                        spacing: 8px;
-                        padding-top: 6px;
-                        Select {
-                            options: ["Şifreli DNS · Cloudflare", "Şifreli DNS · Google", "Şifreli DNS · Quad9", "Şifreli DNS · AdGuard", "Yandex · 1253 yönlendirme", "Kapalı"];
-                        }
-
-                        Field {
-                            placeholder: "Özel DoH adresi: https://dns.ornek.com/dns-query";
-                        }
-                    }
-                }
-
-                Card {
-                    heading: "GÖRÜNÜM";
-                    VerticalLayout {
-                        padding-top: 6px;
-                        Segmented {
-                            options: ["Sistem", "Koyu", "Açık"];
-                            current-index <=> root.theme-index;
-                            selected(index) => {
-                                root.theme-selected(index);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 export component AppWindow inherits Window {
     title: "GoodbyeDPI UI 3";
     width: 400px;
@@ -200,19 +113,33 @@ export component AppWindow inherits Window {
     default-font-family: "Segoe UI Variable Text";
     default-font-size: 14px;
 
-    in-out property <PowerState> power-state: PowerState.off;
-    in-out property <bool> settings-open: false;
-    in-out property <string> method-name: "Ters sıra";
-    in-out property <string> dns-name: "Cloudflare DoH";
-    in-out property <string> uptime: "";
+    /// 0 = ana sayfa, 1 = ayarlar menusu, 2 = alt sayfa.
+    in-out property <int> depth: 0;
+    /// Alt sayfa: 1 yontem, 2 dns, 3 siteler, 4 genel, 5 gorunum, 6 hakkinda.
+    in-out property <int> sub: 0;
+    /// Alt sayfaya ana sayfadan dogrudan gelindiyse geri tusu ana sayfaya doner.
+    property <bool> sub-from-home: false;
 
-    callback power-clicked();
     callback drag-window();
     callback minimize();
     callback close-window();
-    callback theme-selected(int);
+    /// Pencere gorunur/gizli: Rust tarafi sayaclari yalnizca gorunurken yeniler.
+    callback page-changed(int, int);
 
-    property <bool> is-on: root.power-state == PowerState.on;
+    function go(d: int, s: int) {
+        root.depth = d;
+        root.sub = s;
+        root.page-changed(d, s);
+    }
+
+    function back() {
+        if (root.depth == 2 && root.sub-from-home) {
+            root.sub-from-home = false;
+            root.go(0, root.sub);
+        } else {
+            root.go(max(0, root.depth - 1), root.sub);
+        }
+    }
 
     VerticalLayout {
         TitleBar {
@@ -220,7 +147,8 @@ export component AppWindow inherits Window {
                 root.drag-window();
             }
             settings => {
-                root.settings-open = !root.settings-open;
+                root.sub-from-home = false;
+                root.go(root.depth == 0 ? 1 : 0, root.sub);
             }
             minimize => {
                 root.minimize();
@@ -233,109 +161,101 @@ export component AppWindow inherits Window {
         body := Rectangle {
             clip: true;
 
-            home := VerticalLayout {
-                padding: 24px;
-                padding-top: 8px;
-
-                Rectangle {
-                    vertical-stretch: 1;
+            HomePage {
+                x: root.depth >= 1 ? -parent.width * 0.25 : 0px;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                open-method => {
+                    root.sub-from-home = true;
+                    root.go(2, 1);
                 }
-
-                HorizontalLayout {
-                    alignment: center;
-                    Orb {
-                        state: root.power-state;
-                        clicked => {
-                            root.power-clicked();
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 24px;
-                }
-
-                Text {
-                    text: root.power-state == PowerState.on ? "Korumalı" : root.power-state == PowerState.connecting ? "Bağlanıyor…" : root.power-state == PowerState.error ? "Bağlanamadı" : "Kapalı";
-                    color: root.power-state == PowerState.on ? Theme.accent : root.power-state == PowerState.error ? Theme.danger : Theme.text;
-                    font-size: 24px;
-                    font-weight: 650;
-                    horizontal-alignment: center;
-                    animate color { duration: Motion.base; }
-                }
-
-                Rectangle {
-                    height: 4px;
-                }
-
-                Text {
-                    text: root.is-on ? root.uptime : root.power-state == PowerState.connecting ? "Motor başlatılıyor" : "Açmak için küreye dokun";
-                    color: Theme.text-muted;
-                    font-size: 13px;
-                    horizontal-alignment: center;
-                }
-
-                Rectangle {
-                    height: 28px;
-                }
-
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 8px;
-                    Chip {
-                        label: "Yöntem";
-                        value: root.method-name;
-                        icon: Icons.bolt;
-                    }
-
-                    Chip {
-                        label: "DNS";
-                        value: root.dns-name;
-                        icon: Icons.globe;
-                    }
-                }
-
-                Rectangle {
-                    vertical-stretch: 1;
-                }
-
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 6px;
-                    VerticalLayout {
-                        alignment: center;
-                        Icon {
-                            commands: Icons.pulse;
-                            width: 14px;
-                            height: 14px;
-                            tint: test-ta.has-hover ? Theme.accent : Theme.text-muted;
-                        }
-                    }
-
-                    Text {
-                        text: "Bağlantıyı test et";
-                        color: test-ta.has-hover ? Theme.accent : Theme.text-muted;
-                        font-size: 12px;
-                        vertical-alignment: center;
-                        test-ta := TouchArea {
-                            mouse-cursor: pointer;
-                        }
-                    }
+                open-dns => {
+                    root.sub-from-home = true;
+                    root.go(2, 2);
                 }
             }
 
-            settings := SettingsPage {
-                x: root.settings-open ? 0px : parent.width;
-                y: 0px;
+            SettingsMenu {
+                x: root.depth == 0 || (root.depth == 2 && root.sub-from-home) ? parent.width : root.depth == 1 ? 0px : -parent.width * 0.25;
                 width: parent.width;
                 height: parent.height;
-                animate x { duration: 280ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
                 back => {
-                    root.settings-open = false;
+                    root.back();
                 }
-                theme-selected(index) => {
-                    root.theme-selected(index);
+                open(page) => {
+                    root.go(2, page);
                 }
+            }
+
+            MethodPage {
+                x: root.depth == 2 && root.sub == 1 ? 0px : parent.width;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                back => {
+                    root.back();
+                }
+            }
+
+            DnsPage {
+                x: root.depth == 2 && root.sub == 2 ? 0px : parent.width;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                back => {
+                    root.back();
+                }
+            }
+
+            SitesPage {
+                x: root.depth == 2 && root.sub == 3 ? 0px : parent.width;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                back => {
+                    root.back();
+                }
+            }
+
+            GeneralPage {
+                x: root.depth == 2 && root.sub == 4 ? 0px : parent.width;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                back => {
+                    root.back();
+                }
+            }
+
+            AppearancePage {
+                x: root.depth == 2 && root.sub == 5 ? 0px : parent.width;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                back => {
+                    root.back();
+                }
+            }
+
+            AboutPage {
+                x: root.depth == 2 && root.sub == 6 ? 0px : parent.width;
+                width: parent.width;
+                height: parent.height;
+                animate x { duration: 300ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                back => {
+                    root.back();
+                }
+            }
+
+            Toast {
+                x: 16px;
+                y: parent.height - self.height - 16px;
+                width: parent.width - 32px;
+                text: AppState.toast;
+                error: AppState.toast-error;
+                serial: AppState.toast-serial;
             }
         }
     }

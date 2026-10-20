@@ -1,0 +1,122 @@
+﻿; GoodbyeDPI UI 3 - Inno Setup kurulum betigi
+;
+; Derleme: powershell -File publish.ps1   (once dosyalari build\app'e toplar, sonra ISCC calistirir)
+; Cikti:   build\GoodbyeDPI-UI-3-Setup.exe
+;
+; Kurulum yonetici ister: motor bir Windows hizmetidir ve WinDivert surucusunu yukler.
+; Arayuz ise kurulumdan sonra normal kullanici olarak acilir (runasoriginaluser);
+; gunluk kullanimda UAC hic sorulmaz.
+
+#define AppName "GoodbyeDPI UI 3"
+#define AppVersion "3.0.0-alpha.1"
+#define AppPublisher "GoodbyeDPI UI"
+#define AppExe "GoodbyeDPI3.exe"
+#define ServiceExe "GoodbyeDPI3-Service.exe"
+#define ServiceName "GoodbyeDPI3"
+#define SourceDir "..\build\app"
+#define V1AppId "{9DCDD6ED-2D8D-4EEE-A4A4-13F6B37614AE}_is1"
+
+[Setup]
+AppId={{5B7C2E41-9A3D-4F6E-B8C1-7D2A0E9F4C63}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppVerName={#AppName} {#AppVersion}
+AppPublisher={#AppPublisher}
+AppSupportURL=https://github.com/unsalable/goodbyedpi-ui-3
+DefaultDirName={autopf}\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+DisableDirPage=auto
+DisableReadyPage=yes
+UninstallDisplayIcon={app}\{#AppExe}
+UninstallDisplayName={#AppName}
+OutputDir=..\build
+OutputBaseFilename=GoodbyeDPI-UI-3-Setup
+SetupIconFile=..\build\app.ico
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+WizardSizePercent=100
+PrivilegesRequired=admin
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.17763
+CloseApplications=yes
+RestartApplications=no
+VersionInfoVersion=3.0.0.0
+VersionInfoProductName={#AppName}
+
+[Languages]
+Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"
+
+[CustomMessages]
+tr.V1Found=GoodbyeDPI UI'ın eski sürümü (2.x) bu bilgisayarda kurulu.%n%nİki DPI aracı aynı anda çalışırsa bağlantılar bozulabilir. Eski sürüm şimdi kaldırılsın mı?%n%nAyarların (sağlayıcı, özel yöntemler, özel DNS) yeni sürüme otomatik aktarılır.
+en.V1Found=An older GoodbyeDPI UI (2.x) is installed.%n%nRunning two DPI tools at once can break connections. Uninstall the old version now?%n%nYour settings will be imported into the new version.
+tr.Launch=GoodbyeDPI UI 3'ü aç
+en.Launch=Open GoodbyeDPI UI 3
+
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+[Files]
+Source: "{#SourceDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\WinDivert.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\WinDivert64.sys"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+
+[Registry]
+; Oturum acilisi kaydini arayuz yazar; kaldirirken temizle (deger burada olusturulmaz).
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "GoodbyeDPI3"; Flags: uninsdeletevalue dontcreatekey
+
+[Run]
+Filename: "{app}\{#ServiceExe}"; Parameters: "--install"; Flags: runhidden waituntilterminated; StatusMsg: "Motor hizmeti kuruluyor..."
+Filename: "{sys}\net.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated; StatusMsg: "Motor başlatılıyor..."
+Filename: "{app}\{#AppExe}"; Description: "{cm:Launch}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden waituntilterminated; RunOnceId: "KillUi"
+Filename: "{app}\{#ServiceExe}"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveService"
+
+[UninstallDelete]
+; Ayarlar (%ProgramData%\GoodbyeDPI3) bilerek birakilir; yeniden kurulumda geri gelir.
+Type: filesandordirs; Name: "{app}\licenses"
+
+[Code]
+function V1UninstallString(): String;
+var
+  S: String;
+begin
+  Result := '';
+  if RegQueryStringValue(HKLM64, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#V1AppId}', 'UninstallString', S) then
+    Result := S
+  else if RegQueryStringValue(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#V1AppId}', 'UninstallString', S) then
+    Result := S;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+  Uninst: String;
+begin
+  Result := '';
+  // Guncelleme: dosyalar kilitli olmasin diye once hizmet ve arayuz kapatilir.
+  Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, Code);
+
+  Uninst := V1UninstallString();
+  if (Uninst <> '') and (not WizardSilent) then
+  begin
+    if MsgBox(CustomMessage('V1Found'), mbConfirmation, MB_YESNO) = IDYES then
+    begin
+      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM GoodbyeDPI-UI.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+      Exec(RemoveQuotes(Uninst), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    end;
+  end;
+end;

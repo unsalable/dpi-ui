@@ -1,11 +1,11 @@
 # Performans olcumu: bir sureci baslatir, RAM/CPU'yu ornekler, istenirse pencere goruntusu alir.
 # Ornek:
 #   powershell -File perf\measure.ps1 -Exe target\release\GoodbyeDPI3.exe -Seconds 10
-#   powershell -File perf\measure.ps1 -Exe ... -EnvVars GDPI_DEMO=1 -Shots 1,4.5,6
+#   powershell -File perf\measure.ps1 -Exe ... -EnvVars "GDPI_DEMO=1;X=2" -Shots "1,4.5,6"
 # Not: dosya bilerek yalnizca ASCII karakter icerir (Windows PowerShell 5.1 BOM'suz UTF-8'i yanlis okur).
 param(
     [Parameter(Mandatory = $true)] [string] $Exe,
-    [string[]] $EnvVars = @(),
+    [string] $EnvVars = "",
     [string] $Warmup = "2",
     [string] $Seconds = "10",
     [string] $Shots = "",
@@ -33,7 +33,7 @@ public static class W32 {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $saved = @{}
-foreach ($kv in $EnvVars) {
+foreach ($kv in ($EnvVars.Split(";", [StringSplitOptions]::RemoveEmptyEntries))) {
     $name, $value = $kv.Split("=", 2)
     $saved[$name] = [Environment]::GetEnvironmentVariable($name)
     [Environment]::SetEnvironmentVariable($name, $value)
