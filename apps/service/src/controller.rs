@@ -12,7 +12,7 @@ use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Respon
 use shared::update::{UpdateState, UpdateStatus};
 
 use crate::engine_loop::{self, EngineMsg, RunningEngine};
-use crate::updater::{self, Updater};
+use crate::updater::{self, UiSession, Updater};
 use crate::{conflicts, error, info, scm, store, warn};
 
 pub struct Controller {
@@ -32,6 +32,8 @@ struct Inner {
     status: EngineStatus,
     conflicts: Vec<shared::ipc::Conflict>,
     subscribers: Vec<(u64, SyncSender<ServerMessage>)>,
+    /// Bagli arayuz surecleri: (istemci, Windows oturumu, tepsi mi).
+    ui_clients: Vec<(u64, u32, bool)>,
 }
 
 pub fn now_ms() -> u64 {
@@ -45,7 +47,15 @@ impl Controller {
         let learned = store::load_learned();
         let status = EngineStatus { method_name: config.active_method().name, dns_name: config.active_dns().display_name(), ..Default::default() };
         let ctrl = Arc::new_cyclic(|me| Self {
-            inner: Mutex::new(Inner { config, learned, engine: None, status, conflicts: Vec::new(), subscribers: Vec::new() }),
+            inner: Mutex::new(Inner {
+                config,
+                learned,
+                engine: None,
+                status,
+                conflicts: Vec::new(),
+                subscribers: Vec::new(),
+                ui_clients: Vec::new(),
+            }),
             tx,
             exe_dir,
             as_service,
@@ -165,6 +175,10 @@ impl Controller {
                 }
                 Response::Ok
             }
+            Request::InstallUpdate => match self.me.upgrade().map(|me| updater::request_install(&me)) {
+                Some(Err(message)) => Response::Error { message },
+                _ => Response::Ok,
+            },
             Request::BenchDns => Response::DnsBench {
                 results: crate::dns::bench::run_all()
                     .into_iter()
@@ -195,6 +209,49 @@ impl Controller {
 
     pub fn updater(&self) -> &Updater {
         &self.updater
+    }
+
+    pub fn is_service(&self) -> bool {
+        self.as_service
+    }
+
+    pub fn exe_dir(&self) -> &std::path::Path {
+        &self.exe_dir
+    }
+
+    /// Istemci kendini tanittiginda: tepsi ve pencere hangi Windows oturumunda calisiyor
+    /// (guncellemeden sonra ayni oturumda yeniden acilmalari icin).
+    pub fn register_client(&self, id: u64, session: Option<u32>, name: &str) {
+        let tray = match name {
+            "tepsi" => true,
+            "pencere" => false,
+            _ => return,
+        };
+        let Some(session) = session else { return };
+        let mut inner = self.inner.lock().unwrap();
+        inner.ui_clients.retain(|(i, _, _)| *i != id);
+        inner.ui_clients.push((id, session, tray));
+    }
+
+    /// Arayuzun acik oldugu oturumlar.
+    pub fn ui_sessions(&self) -> Vec<UiSession> {
+        let inner = self.inner.lock().unwrap();
+        let mut out: Vec<UiSession> = Vec::new();
+        for &(_, session, tray) in &inner.ui_clients {
+            let i = match out.iter().position(|s| s.session == session) {
+                Some(i) => i,
+                None => {
+                    out.push(UiSession { session, ..Default::default() });
+                    out.len() - 1
+                }
+            };
+            if tray {
+                out[i].tray = true;
+            } else {
+                out[i].window = true;
+            }
+        }
+        out
     }
 
     pub fn update_status(&self) -> UpdateStatus {
@@ -346,7 +403,9 @@ impl Controller {
 
     /// Istemci ayrilinca aboneligini hemen sil (yazici is parcacigi beklemesin).
     pub fn unsubscribe(&self, id: u64) {
-        self.inner.lock().unwrap().subscribers.retain(|(i, _)| *i != id);
+        let mut inner = self.inner.lock().unwrap();
+        inner.subscribers.retain(|(i, _)| *i != id);
+        inner.ui_clients.retain(|(i, _, _)| *i != id);
     }
 
     pub fn shutdown(&self) {

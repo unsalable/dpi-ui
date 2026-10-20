@@ -6,6 +6,11 @@
 ; Kurulum yonetici ister: motor bir Windows hizmetidir ve WinDivert surucusunu yukler.
 ; Arayuz ise kurulumdan sonra normal kullanici olarak acilir (runasoriginaluser);
 ; gunluk kullanimda UAC hic sorulmaz.
+;
+; Guncellemeler: motor hizmeti (SYSTEM) paketi /VERYSILENT /UPDATE=service ile kendisi kurar;
+; kullaniciya hicbir sey sorulmaz. Bu kipte kurulum arayuzu acmaz (SYSTEM olarak acardi);
+; kurulumdan sonra baslayan yeni hizmet arayuzu kullanicinin oturumunda yeniden acar.
+; /UPDATE=window|tray: 3.0.3 ve oncesinin arayuzden UAC ile baslattigi eski yol.
 
 #define AppName "DPI UI"
 #define AppVersion "3.0.3"
@@ -89,6 +94,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\{#ServiceExe}"; Parameters: "--install"; Flags: runhidden waituntilterminated; StatusMsg: "Motor hizmeti kuruluyor..."
 Filename: "{sys}\net.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated; StatusMsg: "Motor başlatılıyor..."
 Filename: "{app}\{#AppExe}"; Description: "{cm:Launch}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+; Elle kurulumda tepsi her durumda baslar: uygulama calisir ve oturum acilisina kaydolur.
+Filename: "{app}\{#AppExe}"; Parameters: "--tray"; Flags: nowait skipifsilent runasoriginaluser
 ; Uygulamanin baslattigi guncelleme (/UPDATE=window|tray): bitince kullanicinin kendi yetkisiyle yeniden acilir.
 Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsUpdate('window')
 Filename: "{app}\{#AppExe}"; Parameters: "--tray"; Flags: nowait runasoriginaluser; Check: IsUpdate('tray')
@@ -104,6 +111,10 @@ Filename: "{app}\{#ServiceExe}"; Parameters: "--uninstall"; Flags: runhidden wai
 Type: filesandordirs; Name: "{app}\licenses"
 
 [Code]
+var
+  // PrepareToInstall motor hizmetini durdurdu mu? Kurulum yarida kalirsa hizmet yeniden baslatilir.
+  StoppedService: Boolean;
+
 function V1UninstallString(): String;
 var
   S: String;
@@ -128,6 +139,7 @@ begin
   Result := '';
   // Guncelleme: dosyalar kilitli olmasin diye once hizmet ve arayuz kapatilir.
   Exec(ExpandConstant('{sys}\net.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  StoppedService := True;
   // Once duzgun kapat (tepsi simgesi temizlenir). Beklenmez: --quit bilmeyen eski bir surum
   // normal acilirsa kurulum takilmasin; kalan her sey asagida zorla kapatilir.
   if FileExists(ExpandConstant('{app}\{#AppExe}')) then
@@ -152,4 +164,15 @@ begin
   // kullaniyorsa durmaz, dosya o zaman ayni surumse atlanir, degilse yeniden baslatmada degisir.
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop WinDivert', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Sleep(300);
+end;
+
+procedure DeinitializeSetup();
+var
+  Code: Integer;
+begin
+  // Kurulum basarili olduysa hizmet [Run] ile zaten basladi ("zaten calisiyor" hatasi zararsiz).
+  // Yarida kaldiysa eski hizmet yeniden baslar: baglanti korumasiz kalmaz, eski hizmet de
+  // kapanan arayuzu yeniden acar.
+  if StoppedService then
+    Exec(ExpandConstant('{sys}\net.exe'), 'start {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;

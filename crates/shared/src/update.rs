@@ -226,9 +226,12 @@ pub enum UpdateState {
     Checking,
     UpToDate,
     Downloading { version: String, percent: u8 },
-    /// Imzasi dogrulandi, `paths::update_installer()` konumunda kuruluma hazir. Arayuz paketi
+    /// Imzasi dogrulandi, `paths::update_installer()` konumunda kuruluma hazir. Servis paketi
     /// baslatmadan once SHA-256'yi yeniden hesaplayip bununla karsilastirir.
     Ready { version: String, notes: String, sha256: String },
+    /// Servis kurulumu sessizce baslatti. Arayuz surecleri bunu gorunce kendiliginden kapanir;
+    /// kurulumdan sonra yeni servis onlari kullanicinin oturumunda yeniden acar.
+    Installing { version: String },
     Failed { message: String },
 }
 
@@ -344,5 +347,9 @@ mod tests {
         let j = serde_json::to_string(&s).unwrap();
         assert!(j.contains("\"state\":\"ready\""), "{j}");
         assert_eq!(serde_json::from_str::<UpdateStatus>(&j).unwrap(), s);
+        let i = UpdateStatus { state: UpdateState::Installing { version: "3.0.4".into() }, checked_at_ms: None };
+        let j = serde_json::to_string(&i).unwrap();
+        assert!(j.contains("\"state\":\"installing\""), "{j}");
+        assert_eq!(serde_json::from_str::<UpdateStatus>(&j).unwrap(), i);
     }
 }

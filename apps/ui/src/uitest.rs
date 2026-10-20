@@ -429,6 +429,20 @@ mod gallery {
         h.advance(1200);
         h.shot("state-error");
 
+        // Sessiz guncelleme: Hakkinda sayfasinda durum, altta pencere kapanmadan onceki bildirim.
+        h.state().set_toast_error(false);
+        h.state().set_update_text(SharedString::from("3.0.4 yükleniyor…"));
+        h.state().set_update_busy(true);
+        h.state().set_toast(SharedString::from("Sürüm 3.0.4 yükleniyor; uygulama birkaç saniye içinde yeniden açılacak."));
+        h.state().set_toast_serial(3);
+        h.app.set_depth(2);
+        h.app.set_sub(6);
+        h.advance(900);
+        h.shot("state-update-installing");
+        h.state().set_update_busy(false);
+        h.app.set_depth(0);
+        h.advance(600);
+
         h.app.set_depth(2);
         h.app.set_sub(1);
         h.advance(600);
@@ -663,35 +677,5 @@ mod tray_menu {
             let name = format!("tray-menu-{}x.png", scale as u32);
             std::fs::write(std::path::Path::new(&dir).join(name), super::png(tw as u32, th as u32, &img)).unwrap();
         }
-    }
-}
-
-#[cfg(test)]
-mod update_launch {
-    use crate::winsys;
-
-    /// Windows CNG ile SHA-256 dogru hesaplanir; ozeti tutmayan paket hic baslatilmaz.
-    #[test]
-    fn installer_hash_is_checked_before_launch() {
-        let dir = std::env::temp_dir().join(format!("gdpi3-update-test-{}", std::process::id()));
-        let file = dir.join("abc.bin");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(&file, b"abc").unwrap();
-        assert_eq!(
-            winsys::sha256_file(&file).as_deref(),
-            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
-        );
-        assert!(winsys::sha256_file(&dir.join("yok.bin")).is_none());
-
-        // Paket yokken ve ozet tutmazken kurulum baslatilmaz (UAC bile sorulmaz).
-        // SAFETY: ortam degiskeni yalnizca bu test surecinde ve bu testte kullanilir.
-        unsafe { std::env::set_var("GDPI3_DATA_DIR", &dir) };
-        assert!(winsys::launch_update(&"0".repeat(64), "window").unwrap_err().contains("bulunamadı"));
-        let update = shared::paths::update_dir();
-        std::fs::create_dir_all(&update).unwrap();
-        std::fs::write(shared::paths::update_installer(), b"sahte paket").unwrap();
-        assert!(winsys::launch_update(&"0".repeat(64), "window").unwrap_err().contains("doğrulanamadı"));
-        unsafe { std::env::remove_var("GDPI3_DATA_DIR") };
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

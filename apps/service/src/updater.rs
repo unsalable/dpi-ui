@@ -1,40 +1,69 @@
-//! Guncelleme denetimi: GitHub surumlerine bakar, yeni surumun kurulum paketini indirir ve
-//! imzasini dogrular. Kurulumu BASLATMAZ: hazir oldugunu arayuze bildirir; arayuz kurulumu
-//! kullanicinin oturumunda baslatir ve Windows yonetici onayini (UAC) sorar.
+//! Guncelleme: GitHub surumlerine bakar, yeni surumun kurulum paketini indirir, imzasini
+//! dogrular ve "Otomatik yukle" aciksa kendisi sessizce kurar. Servis SYSTEM olarak calistigi
+//! icin kullanici hicbir sey yapmaz: Windows onay (UAC) sormaz, ekranda kurulum penceresi
+//! acilmaz. Acik arayuzler kurulumdan once kendiliginden kapanir; kurulumdan sonra baslayan
+//! yeni servis onlari kullanicinin oturumunda (kullanicinin kendi yetkisiyle) yeniden acar.
 //!
 //! Dogrulama zinciri: update.json'un Ed25519 imzasi gomulu acik anahtarla dogrulanir ->
 //! manifestteki surum yayin etiketiyle ayni ve simdiki surumden yeni olmali -> indirilen
 //! paketin boyutu ve SHA-256'si manifestle birebir eslesmeli. Biri tutmazsa dosya silinir.
+//! Paket baslatilmadan hemen once ozet yeniden hesaplanir.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ring::signature::{ED25519, UnparsedPublicKey};
+use serde::{Deserialize, Serialize};
 use shared::config::{UpdateChannel, UpdateMode};
 use shared::update::{self, Candidate, Manifest, Release, UpdateState, Version};
 
 use crate::controller::{Controller, now_ms};
-use crate::{https, info, warn};
+use crate::{https, info, launch, warn};
 
 /// Acilistan sonra ilk denetimden once beklenir (ag baglantisi otursun).
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
-const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 3600);
+const CHECK_INTERVAL_MS: u64 = 6 * 3600 * 1000;
+/// Denetim basarisizsa (acilista ag henuz yoksa) 6 saat beklenmez; giderek seyrelen aralikla denenir.
+const RETRY_MS: [u64; 5] = [2 * 60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000];
+/// Zamanlayicinin uyanma araligi. Sure duvar saatiyle olculur: uyku ya da hazirda bekletmeden
+/// donunce gecikmis denetim hemen yapilir.
+const TICK: Duration = Duration::from_secs(60);
 /// Arayuz acilinca istenen denetim bundan yakin zamanda yapildiysa aga cikilmaz.
 const MIN_RECHECK_MS: u64 = 10 * 60 * 1000;
+/// Kurulumdan once arayuzlerin kapanmasi icin en fazla bu kadar beklenir (kalani kurulum kapatir).
+const UI_CLOSE_WAIT: Duration = Duration::from_secs(5);
+/// Kurulum bu surede servisi durdurmazsa basarisiz sayilir.
+const INSTALL_TIMEOUT_MS: u32 = 15 * 60 * 1000;
 
 pub struct Updater {
     busy: AtomicBool,
+    installing: AtomicBool,
 }
 
 impl Updater {
     pub fn new() -> Self {
-        Self { busy: AtomicBool::new(false) }
+        Self { busy: AtomicBool::new(false), installing: AtomicBool::new(false) }
     }
 }
 
-/// Arka planda duzenli denetim (servis acilisi + her 6 saat).
+/// Bir oturumda acik olan arayuz surecleri (kurulumdan sonra yeniden acilacaklar).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiSession {
+    pub session: u32,
+    pub tray: bool,
+    pub window: bool,
+}
+
+/// Kurulumdan once yazilan not (`paths::update_relaunch_file`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Relaunch {
+    version: String,
+    sessions: Vec<UiSession>,
+}
+
+/// Arka planda duzenli denetim: servis acilisi, sonra her 6 saat; basarisizsa daha sik.
 pub fn spawn_schedule(ctrl: &Arc<Controller>) {
     let weak = Arc::downgrade(ctrl);
     std::thread::Builder::new()
@@ -42,14 +71,29 @@ pub fn spawn_schedule(ctrl: &Arc<Controller>) {
         .stack_size(256 * 1024)
         .spawn(move || {
             std::thread::sleep(FIRST_CHECK_DELAY);
+            let mut failures = 0usize;
+            let mut due = 0u64;
             loop {
                 let Some(ctrl) = weak.upgrade() else { return };
-                run_check(&ctrl, false);
+                if now_ms() >= due {
+                    run_check(&ctrl, false);
+                    let failed = matches!(ctrl.update_status().state, UpdateState::Failed { .. });
+                    failures = if failed { failures + 1 } else { 0 };
+                    due = now_ms() + next_check_in(failures);
+                }
                 drop(ctrl);
-                std::thread::sleep(CHECK_INTERVAL);
+                std::thread::sleep(TICK);
             }
         })
         .ok();
+}
+
+/// Ust uste `failures` basarisiz denetimden sonra bir sonrakine kadar beklenecek sure (ms).
+fn next_check_in(failures: usize) -> u64 {
+    match failures {
+        0 => CHECK_INTERVAL_MS,
+        n => RETRY_MS[(n - 1).min(RETRY_MS.len() - 1)],
+    }
 }
 
 /// Arayuzden gelen "simdi denetle" (ya da arayuz acilisi). Is parcacigi baslatir, beklemez.
@@ -76,7 +120,8 @@ fn run_check(ctrl: &Arc<Controller>, forced: bool) {
         return;
     }
     let updater = ctrl.updater();
-    if updater.busy.swap(true, Ordering::SeqCst) {
+    // Kurulum surerken denetim "kuruluyor" durumunu ezmesin.
+    if updater.installing.load(Ordering::SeqCst) || updater.busy.swap(true, Ordering::SeqCst) {
         return;
     }
     ctrl.set_update(UpdateState::Checking, false);
@@ -91,8 +136,157 @@ fn run_check(ctrl: &Arc<Controller>, forced: bool) {
             UpdateState::Failed { message: e }
         }
     };
+    let ready = matches!(state, UpdateState::Ready { .. });
     ctrl.set_update(state, true);
     updater.busy.store(false, Ordering::SeqCst);
+    if ready && config.updates == UpdateMode::Auto {
+        let _ = install(ctrl, false);
+    }
+}
+
+/// Arayuzden gelen "simdi yukle": kurulacak paket yoksa hemen hata doner; varsa kurulum arka
+/// planda baslar.
+pub fn request_install(ctrl: &Arc<Controller>) -> Result<(), String> {
+    if !matches!(ctrl.update_status().state, UpdateState::Ready { .. }) {
+        return Err("Kurulacak bir güncelleme yok.".into());
+    }
+    let weak: Weak<Controller> = Arc::downgrade(ctrl);
+    std::thread::Builder::new()
+        .name("guncelleme-kur".into())
+        .stack_size(256 * 1024)
+        .spawn(move || {
+            if let Some(ctrl) = weak.upgrade() {
+                let _ = install(&ctrl, true);
+            }
+        })
+        .map(drop)
+        .map_err(|e| format!("Kurulum başlatılamadı: {e}"))
+}
+
+/// Dogrulanmis paketi sessizce kurar. `by_user` degilse daha once kurulamamis surum yeniden
+/// denenmez (kurulum dongusu olmasin); kullanici "Simdi yukle" ile yine deneyebilir.
+/// Basariliysa donmez: kurulum servisi durdurur ve surec onunla biter.
+pub fn install(ctrl: &Arc<Controller>, by_user: bool) -> Result<(), String> {
+    let ready = ctrl.update_status().state;
+    let UpdateState::Ready { version, sha256: expected, .. } = &ready else {
+        return Err("Kurulacak bir güncelleme yok.".into());
+    };
+    if !ctrl.is_service() {
+        return Err("Güncelleme yalnızca motor hizmet olarak çalışırken kurulur.".into());
+    }
+    if !by_user && failed_version().as_deref() == Some(version.as_str()) {
+        return Ok(());
+    }
+    let updater = ctrl.updater();
+    if updater.installing.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    let installer = shared::paths::update_installer();
+    if !std::fs::read(&installer).is_ok_and(|d| sha256(&d).eq_ignore_ascii_case(expected)) {
+        let _ = std::fs::remove_file(&installer);
+        warn!("Güncelleme paketi doğrulanamadı; silindi.");
+        ctrl.set_update(UpdateState::Failed { message: "Güncelleme paketi doğrulanamadı; yeniden indirilecek.".into() }, false);
+        updater.installing.store(false, Ordering::SeqCst);
+        return Err("paket doğrulanamadı".into());
+    }
+
+    let note = Relaunch { version: version.clone(), sessions: ctrl.ui_sessions() };
+    let _ = std::fs::write(shared::paths::update_relaunch_file(), serde_json::to_vec(&note).unwrap_or_default());
+    info!("Sürüm {version} kuruluyor; açık arayüzler kapanıp sonra yeniden açılacak ({:?}).", note.sessions);
+    ctrl.set_update(UpdateState::Installing { version: version.clone() }, false);
+
+    // Arayuzler Installing durumunu gorunce kendiliginden kapanir (tepsi simgesi temiz kalkar).
+    let start = Instant::now();
+    while !ctrl.ui_sessions().is_empty() && start.elapsed() < UI_CLOSE_WAIT {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let log = shared::paths::log_dir().join("update-setup.log");
+    let failure = match launch::run_installer(&installer, &log) {
+        // Kurulum servisi durdurur ve bu surec onunla biter. Buraya donulduyse kurulum servise
+        // dokunmadan bitti ya da takildi: kurulmamis sayilir.
+        Ok(process) => {
+            if process.wait(INSTALL_TIMEOUT_MS) {
+                "kurulum hizmeti durdurmadan bitti".to_owned()
+            } else {
+                "kurulum zaman aşımına uğradı".to_owned()
+            }
+        }
+        Err(e) => e,
+    };
+    warn!("Sürüm {version} kurulamadı: {failure}. Kurulum günlüğü: {}", log.display());
+    remember_failed(version);
+    let _ = std::fs::remove_file(shared::paths::update_relaunch_file());
+    relaunch(&ctrl.exe_dir().join(shared::UI_EXE), &note.sessions);
+    ctrl.set_update(ready.clone(), false);
+    updater.installing.store(false, Ordering::SeqCst);
+    Err(failure)
+}
+
+/// Servis acilisi: kurulumdan once yazilan not varsa arayuzleri yeniden acar ve kurulumun
+/// tutup tutmadigini kaydeder (tutmadiysa o surum otomatik olarak yeniden denenmez).
+pub fn after_start(ctrl: &Arc<Controller>) {
+    let path = shared::paths::update_relaunch_file();
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let _ = std::fs::remove_file(&path);
+    let Ok(note) = serde_json::from_str::<Relaunch>(&text) else { return };
+    if installed(&note.version, shared::VERSION) {
+        info!("Sürüm {} kuruldu.", note.version);
+        clear_failed();
+    } else {
+        warn!(
+            "Sürüm {} kurulamadı; kurulum günlüğü: {}",
+            note.version,
+            shared::paths::log_dir().join("update-setup.log").display()
+        );
+        remember_failed(&note.version);
+    }
+    let exe = ctrl.exe_dir().join(shared::UI_EXE);
+    std::thread::Builder::new()
+        .name("arayuzu-ac".into())
+        .stack_size(128 * 1024)
+        .spawn(move || relaunch(&exe, &note.sessions))
+        .ok();
+}
+
+/// Kurulumdan sonra calisan surum, kurulmasi istenen surume ulasti mi?
+fn installed(wanted: &str, running: &str) -> bool {
+    match (Version::parse(wanted), Version::parse(running)) {
+        (Some(w), Some(r)) => r >= w,
+        _ => false,
+    }
+}
+
+/// Arayuzu kayitli oturumlarda yeniden acar. Tepsi ve pencere tek ornektir; acik olan yinelenmez.
+fn relaunch(exe: &Path, sessions: &[UiSession]) {
+    for s in sessions {
+        for (wanted, args, what) in [(s.tray, "--tray", "tepsi"), (s.window, "", "pencere")] {
+            if !wanted {
+                continue;
+            }
+            match launch::run_as_session_user(s.session, exe, args) {
+                Ok(()) => info!("Arayüz yeniden açıldı ({}. oturum, {what}).", s.session),
+                Err(e) => warn!("Arayüz yeniden açılamadı ({what}): {e}"),
+            }
+        }
+    }
+}
+
+fn failed_file() -> std::path::PathBuf {
+    shared::paths::update_dir().join("failed.txt")
+}
+
+/// Kurulamayan surum: otomatik kurulum onu bir daha denemez (daha yeni bir surum gelene kadar).
+fn remember_failed(version: &str) {
+    let _ = std::fs::write(failed_file(), version);
+}
+
+fn failed_version() -> Option<String> {
+    std::fs::read_to_string(failed_file()).ok().map(|t| t.trim().to_owned())
+}
+
+fn clear_failed() {
+    let _ = std::fs::remove_file(failed_file());
 }
 
 /// Denetler, gerekirse indirir ve dogrular. `progress` ara durumlari (indirme yuzdesi) alir.
@@ -231,5 +425,32 @@ mod tests {
     #[test]
     fn embedded_key_is_set() {
         assert_ne!(update::PUBLIC_KEY, [0u8; 32], "surum imza anahtari gomulu olmali");
+    }
+
+    /// Acilista ag yoksa denetim 6 saat sonraya kalmaz: 2, 5, 15, 30 dk, sonra saatte bir.
+    #[test]
+    fn failed_checks_retry_soon() {
+        assert_eq!(next_check_in(0), 6 * 3600 * 1000);
+        let mins: Vec<u64> = (1..=7).map(|n| next_check_in(n) / 60_000).collect();
+        assert_eq!(mins, [2, 5, 15, 30, 60, 60, 60]);
+    }
+
+    /// Kurulumdan sonra yeni servis, notta yazan surumu calistiriyorsa kurulum tutmustur.
+    #[test]
+    fn detects_whether_install_took() {
+        assert!(installed("3.0.4", "3.0.4"));
+        assert!(installed("3.0.4", "3.0.5"));
+        assert!(!installed("3.0.4", "3.0.3"), "eski servis geri geldiyse kurulum tutmadi");
+        assert!(!installed("bozuk", "3.0.4"));
+    }
+
+    #[test]
+    fn relaunch_note_round_trips() {
+        let note = Relaunch {
+            version: "3.0.4".into(),
+            sessions: vec![UiSession { session: 1, tray: true, window: true }, UiSession { session: 2, tray: true, window: false }],
+        };
+        let json = serde_json::to_vec(&note).unwrap();
+        assert_eq!(serde_json::from_slice::<Relaunch>(&json).unwrap(), note);
     }
 }

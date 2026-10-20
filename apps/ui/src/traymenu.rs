@@ -19,8 +19,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SPACE, VK_UP,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CalculatePopupWindowPosition, CreateWindowExW, DefWindowProcW, DestroyWindow, GetCursorPos, GetForegroundWindow, HWND_TOPMOST, KillTimer,
-    PostMessageW, RegisterClassW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SetForegroundWindow, SetTimer, SetWindowPos, TPM_BOTTOMALIGN,
+    CalculatePopupWindowPosition, CreateWindowExW, DefWindowProcW, DestroyWindow, GetCursorPos, GetForegroundWindow, HWND_TOPMOST, IDC_ARROW,
+    KillTimer, LoadCursorW, PostMessageW, RegisterClassW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SetForegroundWindow, SetTimer, SetWindowPos, TPM_BOTTOMALIGN,
     TPM_RIGHTALIGN, TPM_WORKAREA, WA_INACTIVE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP,
     WM_MOUSEMOVE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
@@ -468,7 +468,14 @@ pub fn show_at(pt: POINT, view: &View, dark: bool, on_action: fn(Action)) {
     unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = wide("GoodbyeDPI3TrayMenu");
-        let wc = WNDCLASSW { lpfnWndProc: Some(wndproc), hInstance: instance, lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
+        // Sinif imleci bos birakilirsa Windows menunun ustunde bekleme imlecini gosterir.
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(wndproc),
+            hInstance: instance,
+            lpszClassName: class.as_ptr(),
+            hCursor: LoadCursorW(std::ptr::null_mut(), IDC_ARROW),
+            ..std::mem::zeroed()
+        };
         RegisterClassW(&wc);
         let hwnd = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,

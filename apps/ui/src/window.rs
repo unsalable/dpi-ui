@@ -22,6 +22,8 @@ use crate::{AppState, AppWindow, BenchItem, CategoryItem, Choice, HostItem, Moti
 const MIN_BUSY: Duration = Duration::from_millis(750);
 /// Baglanma istegine bu sure icinde hic yanit gelmezse gercek durum gosterilir.
 const MAX_PENDING: Duration = Duration::from_secs(6);
+/// Guncelleme kurulurken pencere bu kadar sonra kapanir (bildirim okunabilsin; servis 5 sn bekler).
+const UPDATE_CLOSE_DELAY: Duration = Duration::from_millis(1500);
 
 struct Ctx {
     app: slint::Weak<AppWindow>,
@@ -40,8 +42,8 @@ struct Ctx {
     /// Kapanma basladi.
     closing: Cell<bool>,
     update: RefCell<UpdateStatus>,
-    /// Bu oturumda guncelleme kurulumu baslatildi mi (iki kez sorulmasin).
-    update_launched: Cell<bool>,
+    /// Servis guncellemeyi kuruyor; pencere kapanmak uzere.
+    update_closing: Cell<bool>,
     /// Kullanici "simdi denetle" dedi: hata olursa bildirim gosterilir.
     update_requested: Cell<bool>,
     /// GDPI3_TEST: gercek oturum acilisi kaydina, tepsiye ve v1 gocune dokunma.
@@ -94,7 +96,7 @@ impl Ctx {
             pending_connect: Cell::new(None),
             closing: Cell::new(false),
             update: RefCell::new(UpdateStatus::default()),
-            update_launched: Cell::new(false),
+            update_closing: Cell::new(false),
             update_requested: Cell::new(false),
             test_mode,
         }
@@ -171,7 +173,7 @@ impl Ctx {
                             self.toast(&format!("Güncelleme denetlenemedi: {message}"), true);
                         }
                     }
-                    self.maybe_install();
+                    self.close_for_update();
                 }
             },
         }
@@ -196,7 +198,7 @@ impl Ctx {
         if let Some(client) = self.client() {
             client.send(Request::CheckUpdate { forced: false });
         }
-        self.maybe_install();
+        self.close_for_update();
     }
 
     fn apply_update(&self) {
@@ -208,8 +210,8 @@ impl Ctx {
             UpdateState::Checking => ("Denetleniyor…".to_owned(), false, true),
             UpdateState::UpToDate => ("Güncel".to_owned(), false, false),
             UpdateState::Downloading { version, percent } => (format!("{version} indiriliyor · %{percent}"), false, true),
-            UpdateState::Ready { version, .. } if self.update_launched.get() => (format!("{version} yükleniyor…"), false, true),
             UpdateState::Ready { version, .. } => (format!("{version} hazır"), true, false),
+            UpdateState::Installing { version } => (format!("{version} yükleniyor…"), false, true),
             UpdateState::Failed { .. } => ("Denetlenemedi".to_owned(), false, false),
         };
         st.set_update_text(s(text));
@@ -217,30 +219,28 @@ impl Ctx {
         st.set_update_busy(busy);
     }
 
-    /// "Otomatik yukle" aciksa dogrulanmis paketin kurulumunu baslatir (oturumda bir kez).
-    fn maybe_install(&self) {
-        let auto = self.config.borrow().as_ref().is_some_and(|c| c.updates == UpdateMode::Auto);
-        if auto && !self.test_mode {
-            self.install_update(false);
-        }
+    /// "Simdi yukle" ("Otomatik yukle" kapaliyken). Kurulumu servis sessizce yapar.
+    fn install_update(&self) {
+        let Some(client) = self.client() else {
+            self.toast("Motor hizmetine bağlı değil.", true);
+            return;
+        };
+        client.request(Request::InstallUpdate, |r| {
+            if let Response::Error { message } = r {
+                post_toast(message, true);
+            }
+        });
     }
 
-    fn install_update(&self, _by_user: bool) {
-        let UpdateState::Ready { version, sha256, .. } = self.update.borrow().state.clone() else { return };
-        if self.update_launched.get() {
+    /// Servis guncellemeyi kuruyor: pencerenin dosyasi degisecegi icin pencere kapanir;
+    /// kurulumdan sonra servis pencereyi yeniden acar.
+    fn close_for_update(&self) {
+        let UpdateState::Installing { version } = &self.update.borrow().state else { return };
+        if self.closing.get() || self.update_closing.replace(true) {
             return;
         }
-        self.update_launched.set(true);
-        match winsys::launch_update(&sha256, "window") {
-            Ok(()) => {
-                self.toast(&format!("Sürüm {version} yükleniyor. Windows onay isteyebilir."), false);
-            }
-            Err(e) => {
-                self.update_launched.set(false);
-                self.toast(&e, true);
-            }
-        }
-        self.apply_update();
+        self.toast(&format!("Sürüm {version} yükleniyor; uygulama birkaç saniye içinde yeniden açılacak."), false);
+        Timer::single_shot(UPDATE_CLOSE_DELAY, || with_ctx(|c| c.quit_now()));
     }
 
     fn apply_engine(&self) {
@@ -1004,7 +1004,7 @@ fn bind_callbacks(app: &AppWindow) {
             client.send(Request::CheckUpdate { forced: true });
         })
     });
-    st.on_install_update(|| with_ctx(|c| c.install_update(true)));
+    st.on_install_update(|| with_ctx(|c| c.install_update()));
     st.on_set_auto_connect(|v| with_ctx(|c| c.edit(|cfg| cfg.auto_connect = v)));
     st.on_set_tray_at_login(|v| {
         with_ctx(|c| {

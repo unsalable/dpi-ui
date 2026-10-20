@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use shared::ipc::{self, ClientMessage, ServerMessage};
+use shared::ipc::{self, ClientMessage, Request, ServerMessage};
 use shared::pipeio::PipeHandle;
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
@@ -23,7 +23,7 @@ use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX};
 use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
+    ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientSessionId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
     PIPE_WAIT,
 };
 use windows_sys::Win32::System::Threading::CreateEventW;
@@ -159,6 +159,9 @@ fn accept_loop(ctrl: Arc<Controller>, stop: Arc<AtomicBool>) {
 
 fn serve(ctrl: Arc<Controller>, pipe: PipeHandle) {
     let id = NEXT_CLIENT.fetch_add(1, Ordering::Relaxed);
+    // Istemcinin Windows oturumu: guncellemeden sonra arayuz ayni oturumda yeniden acilir.
+    let mut session = 0u32;
+    let session = (unsafe { GetNamedPipeClientSessionId(pipe.raw(), &mut session) } != 0).then_some(session);
     let Ok((reader, mut writer)) = pipe.split() else { return };
     let (tx, rx) = sync_channel::<ServerMessage>(64);
     // Yazici, kuyruk kapaninca ya da yazma basarisiz olunca biter.
@@ -178,6 +181,9 @@ fn serve(ctrl: Arc<Controller>, pipe: PipeHandle) {
     loop {
         match ipc::read_message::<ClientMessage>(&mut reader, &mut buf) {
             Ok(Some(msg)) => {
+                if let Request::Hello { client, .. } = &msg.request {
+                    ctrl.register_client(id, session, client);
+                }
                 let response = ctrl.handle(msg.request, Some((id, &tx)));
                 if tx.send(ServerMessage::Reply { id: msg.id, response }).is_err() {
                     break;

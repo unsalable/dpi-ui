@@ -11,6 +11,7 @@ mod controller;
 mod dns;
 mod engine_loop;
 mod https;
+mod launch;
 mod log;
 mod pipe;
 mod probe;
@@ -48,6 +49,10 @@ impl App {
         }
         updater::spawn_schedule(&ctrl);
         let pipe = pipe::start(ctrl.clone());
+        // Sessiz guncellemeden sonra: kapanan arayuzleri kullanicinin oturumunda yeniden ac.
+        if as_service {
+            updater::after_start(&ctrl);
+        }
         App { ctrl, pipe }
     }
 

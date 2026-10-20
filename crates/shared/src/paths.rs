@@ -31,6 +31,12 @@ pub fn update_installer() -> PathBuf {
     update_dir().join(crate::update::INSTALLER_NAME)
 }
 
+/// Servisin kurulumu baslatmadan once yazdigi not: hangi oturumlarda arayuz acikti. Kurulumdan
+/// sonra baslayan servis bunu okur, arayuzu yeniden acar ve dosyayi siler.
+pub fn update_relaunch_file() -> PathBuf {
+    update_dir().join("relaunch.json")
+}
+
 pub fn log_dir() -> PathBuf {
     service_data_dir().join("logs")
 }

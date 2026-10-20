@@ -25,16 +25,20 @@ sürücüsü ve motor hizmeti için); sonrasında uygulama normal kullanıcı ol
 
 ## Güncellemeler nasıl çalışır
 
-Motor hizmeti Windows açılınca, uygulama açılınca ve altı saatte bir bu deponun sürümlerine bakar.
-Yeni sürüm varsa kurulum paketini indirir ve şu zinciri doğrular:
+Motor hizmeti Windows açılınca, oturum açılınca, uygulama açılınca ve altı saatte bir bu deponun
+sürümlerine bakar (ağ henüz hazır değilse 2, 5, 15, 30 dakika sonra yeniden dener). Yeni sürüm varsa
+kurulum paketini indirir ve şu zinciri doğrular:
 
 1. `update.json` (sürüm, boyut, SHA-256) uygulamaya gömülü Ed25519 açık anahtarıyla imzalı olmalı,
 2. manifestteki sürüm yayın etiketiyle aynı ve yüklü sürümden yeni olmalı,
 3. indirilen paketin boyutu ve SHA-256'sı manifestle birebir eşleşmeli.
 
-Paket yalnızca SYSTEM'in yazabildiği bir klasörde durur. Kurulumu uygulama başlatır; Windows bir kez
-yönetici onayı (UAC) ister, kurulum bitince uygulama kendiliğinden yeniden açılır. Ayarlardan
-"Güncellemeleri otomatik yükle" kapatılırsa kurulum Hakkında sayfasından elle başlatılır.
+Paket yalnızca SYSTEM'in yazabildiği bir klasörde durur ve kurulumu motor hizmeti sessizce yapar:
+Windows onay (UAC) sormaz, ekranda kurulum penceresi açılmaz. Açık pencere ve tepsi simgesi kurulumdan
+önce kapanır; kurulum bitince yeni hizmet onları kullanıcının oturumunda, kullanıcının kendi
+yetkisiyle yeniden açar. Kurulum tutmazsa eski hizmet geri gelir ve o sürüm otomatik olarak yeniden
+denenmez. Ayarlardan "Güncellemeleri otomatik yükle" kapatılırsa kurulum Hakkında sayfasından elle
+başlatılır (yine onay sorulmaz). 3.0.3 ve öncesinden yükseltirken Windows son bir kez onay ister.
 
 ## Derleme
 
@@ -53,6 +57,8 @@ powershell -ExecutionPolicy Bypass -File perf\quit-test.ps1 -Exe target\release\
 powershell -ExecutionPolicy Bypass -File perf\tray-menu-test.ps1 -Exe target\release\GoodbyeDPI3.exe
 powershell -ExecutionPolicy Bypass -File perf\repaint-test.ps1 -Exe target\release\GoodbyeDPI3.exe
 powershell -ExecutionPolicy Bypass -File perf\minimize-test.ps1 -Exe target\release\GoodbyeDPI3.exe
+powershell -ExecutionPolicy Bypass -File perf\tray-cursor-test.ps1 -Exe target\release\GoodbyeDPI3.exe
+powershell -ExecutionPolicy Bypass -File perf\update-close-test.ps1 -Exe target\release\GoodbyeDPI3.exe -Window
 ```
 
 Güncelleme denetimi (yönetici gerekmez; indirir ve doğrular, kurmaz):

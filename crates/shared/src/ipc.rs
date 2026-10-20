@@ -36,6 +36,9 @@ pub enum Request {
     /// Guncellemeyi denetle. `forced` degilse yakin zamanda denetlendiyse aga cikilmaz.
     /// Sonuc `Event::Update` olarak gelir.
     CheckUpdate { forced: bool },
+    /// Indirilip dogrulanmis guncellemeyi simdi kur ("Otomatik yukle" kapaliyken kullanici ister).
+    /// Kurulumu servis yapar; Windows onay sormaz.
+    InstallUpdate,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +209,18 @@ mod tests {
         assert!(read_message::<ClientMessage>(&mut io::BufReader::new(&big[..]), &mut buf).is_err());
         let junk = b"{\"id\":1,\"request\":{\"type\":\"rmrf\"}}\n";
         assert!(read_message::<ClientMessage>(&mut io::BufReader::new(&junk[..]), &mut buf).is_err());
+    }
+
+    /// Eksik alanlar varsayilana duser: en kisa durum yaniti da cozulur (testlerdeki sahte servis
+    /// bunu gonderir) ve guncelleme durumu "kuruluyor" olabilir.
+    #[test]
+    fn minimal_state_reply_parses() {
+        let line = br#"{"kind":"reply","id":3,"response":{"type":"state","state":{"serviceVersion":"9.9.9","engine":{},"config":{},"learned":[],"conflicts":[],"update":{"state":"installing","version":"9.9.9"}}}}"#;
+        let msg: ServerMessage = serde_json::from_slice(line).unwrap();
+        let ServerMessage::Reply { id: 3, response: Response::State { state } } = msg else { panic!("{msg:?}") };
+        assert_eq!(state.update.state, crate::update::UpdateState::Installing { version: "9.9.9".into() });
+        let ev = br#"{"kind":"event","event":{"type":"update","status":{"state":"installing","version":"9.9.9"}}}"#;
+        assert!(serde_json::from_slice::<ServerMessage>(ev).is_ok());
     }
 
     #[test]

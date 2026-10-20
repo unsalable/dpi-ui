@@ -11,6 +11,14 @@ use std::time::Duration;
 use shared::ipc::{self, ClientMessage, Event, Request, Response, ServerMessage, StateSnapshot};
 use shared::pipeio::{PipeHandle, PipeWriter};
 
+/// Servisin pipe adi. Testler (`GDPI3_TEST`) `GDPI3_PIPE` ile kendi sahte servislerine baglanir.
+fn pipe_name() -> String {
+    std::env::var_os("GDPI3_TEST")
+        .and_then(|_| std::env::var("GDPI3_PIPE").ok())
+        .filter(|p| p.starts_with(r"\\.\pipe\"))
+        .unwrap_or_else(|| ipc::PIPE_NAME.to_owned())
+}
+
 pub enum Incoming {
     Connected(Box<StateSnapshot>),
     Disconnected,
@@ -67,7 +75,7 @@ impl Client {
     fn run(&self, name: &str, on: impl Fn(Incoming)) {
         let mut announced_down = false;
         loop {
-            let pipe = match PipeHandle::connect(ipc::PIPE_NAME, 1000) {
+            let pipe = match PipeHandle::connect(&pipe_name(), 1000) {
                 Ok(p) => p,
                 Err(_) => {
                     if !announced_down {

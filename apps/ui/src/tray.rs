@@ -2,12 +2,12 @@
 //! Simge motor durumunu gosterir; sol tik pencereyi acar, sag tik uygulamaya ozel menu
 //! (`traymenu`).
 //! Explorer yeniden baslarsa (TaskbarCreated) simge yeniden eklenir.
+//! Servis guncellemeyi kurarken tepsi kendiliginden kapanir; kurulumdan sonra servis yeniden acar.
 
 use std::sync::{Mutex, OnceLock};
 
-use shared::config::UpdateMode;
 use shared::ipc::{EngineState, Event, Request};
-use shared::update::{UpdateState, UpdateStatus};
+use shared::update::UpdateState;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
@@ -38,9 +38,8 @@ struct Tray {
     view: View,
     client: Option<Client>,
     taskbar_created: u32,
-    update: UpdateStatus,
-    auto_update: bool,
-    update_launched: bool,
+    /// Servise yeni baglanildi: guncelleme denetimi istenecek (oturum acilisinda ilk is).
+    check_update: bool,
 }
 
 static TRAY: OnceLock<Mutex<Tray>> = OnceLock::new();
@@ -112,21 +111,17 @@ fn open_window() {
     }
 }
 
-/// Bilgisayar acilisinda pencere yoktur: dogrulanmis guncelleme hazirsa kurulumu tepsi baslatir.
-/// Pencere aciksa isi pencere yapar (ayni kurulum iki kez sorulmasin).
-fn maybe_install_update() {
-    let sha256 = {
-        let mut t = tray();
-        let UpdateState::Ready { sha256, .. } = &t.update.state else { return };
-        let sha256 = sha256.clone();
-        if !t.auto_update || t.update_launched || winsys::window_running() || std::env::var_os("GDPI3_TEST").is_some() {
-            return;
-        }
-        t.update_launched = true;
-        sha256
-    };
-    if winsys::launch_update(&sha256, "tray").is_err() {
-        tray().update_launched = false;
+/// Oturum acilisinda tepsi baslasin: pencere hic acilmadiysa (kurulumdan sonra yalnizca tepsi
+/// calistiysa) oturum acilisi kaydini ilk calistirmada tepsi yapar. Sonrasi kullanicinin tercihi.
+fn ensure_autorun() {
+    if std::env::var_os("GDPI3_TEST").is_some() || std::env::var_os("GDPI3_INSTANCE").is_some() {
+        return;
+    }
+    let mut p = crate::prefs::load();
+    if !p.autorun_initialized {
+        winsys::set_autorun(p.tray_at_login);
+        p.autorun_initialized = true;
+        crate::prefs::save(&p);
     }
 }
 
@@ -184,7 +179,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_STATE => {
             update_icon(false);
-            maybe_install_update();
+            let check = {
+                let mut t = tray();
+                std::mem::take(&mut t.check_update).then(|| t.client.clone()).flatten()
+            };
+            if let Some(client) = check {
+                client.send(Request::CheckUpdate { forced: false });
+            }
             if traymenu::is_open() {
                 let v = tray().view.clone();
                 traymenu::update(&v);
@@ -240,20 +241,24 @@ pub fn run() -> i32 {
             view: View::default(),
             client: None,
             taskbar_created,
-            update: UpdateStatus::default(),
-            auto_update: true,
-            update_launched: false,
+            check_update: false,
         }));
         update_icon(true);
+        ensure_autorun();
 
         let hwnd_val = hwnd as usize;
         let client = Client::start("tepsi", move |inc| {
+            // Servis guncellemeyi kuruyor: exe degisecek, tepsi kapanir (simge temiz kalkar).
+            let installing = |u: &UpdateState| matches!(u, UpdateState::Installing { .. });
             {
                 let mut t = tray();
                 match inc {
                     Incoming::Connected(state) => {
-                        t.update = state.update.clone();
-                        t.auto_update = state.config.updates == UpdateMode::Auto;
+                        if installing(&state.update.state) {
+                            PostMessageW(hwnd_val as HWND, WM_QUIT_ALL, 0, 0);
+                            return;
+                        }
+                        t.check_update = true;
                         t.view = View {
                             connected: true,
                             state: state.engine.state,
@@ -269,8 +274,10 @@ pub fn run() -> i32 {
                         t.view.dns = status.dns_name;
                         t.view.message = status.message;
                     }
-                    Incoming::Event(Event::Config { config }) => t.auto_update = config.updates == UpdateMode::Auto,
-                    Incoming::Event(Event::Update { status }) => t.update = status,
+                    Incoming::Event(Event::Update { status }) if installing(&status.state) => {
+                        PostMessageW(hwnd_val as HWND, WM_QUIT_ALL, 0, 0);
+                        return;
+                    }
                     Incoming::Event(_) => return,
                 }
             }
