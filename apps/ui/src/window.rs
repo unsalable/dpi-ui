@@ -37,9 +37,8 @@ struct Ctx {
     dns_ids: RefCell<Vec<String>>,
     /// Kullanici "baglan" dedi; sonuc gelene (ve en az MIN_BUSY gecene) kadar tarama gosterilir.
     pending_connect: Cell<Option<Instant>>,
-    /// Kapanma basladi (solma suruyor).
+    /// Kapanma basladi.
     closing: Cell<bool>,
-    fade: RefCell<Option<Rc<Timer>>>,
     update: RefCell<UpdateStatus>,
     /// Bu oturumda guncelleme kurulumu baslatildi mi (iki kez sorulmasin).
     update_launched: Cell<bool>,
@@ -94,7 +93,6 @@ impl Ctx {
             dns_ids: RefCell::new(Vec::new()),
             pending_connect: Cell::new(None),
             closing: Cell::new(false),
-            fade: RefCell::new(None),
             update: RefCell::new(UpdateStatus::default()),
             update_launched: Cell::new(false),
             update_requested: Cell::new(false),
@@ -531,35 +529,20 @@ impl Ctx {
         } else {
             winsys::signal_quit();
         }
-        self.fade_out_and_quit();
+        self.quit_now();
     }
 
-    /// Pencere yaklasik 120 ms'de solar, sonra surec biter.
-    fn fade_out_and_quit(&self) {
+    /// Pencereyi gizler ve sureci bitirir. (Solma bilerek yok: pencereyi katmanli moda almak
+    /// Windows'ta icerigi siler, uygulama yalnizca degisen yeri yeniden cizdigi icin pencere bir
+    /// an bos gorunuyordu.)
+    fn quit_now(&self) {
         if self.closing.replace(true) {
             return;
         }
-        let hwnd = self.ui().and_then(|app| hwnd_of(&app));
-        let (Some(hwnd), true) = (hwnd, winsys::animations_enabled()) else {
-            let _ = slint::quit_event_loop();
-            return;
-        };
-        let hwnd = hwnd as usize;
-        let alpha = Cell::new(255i32);
-        let timer = Rc::new(Timer::default());
-        let keep = Rc::downgrade(&timer);
-        timer.start(TimerMode::Repeated, Duration::from_millis(15), move || {
-            let a = (alpha.get() - 34).max(0);
-            alpha.set(a);
-            winsys::set_window_alpha(hwnd as _, a as u8);
-            if a == 0 {
-                if let Some(t) = keep.upgrade() {
-                    t.stop();
-                }
-                let _ = slint::quit_event_loop();
-            }
-        });
-        *self.fade.borrow_mut() = Some(timer);
+        if let Some(app) = self.ui() {
+            let _ = app.hide();
+        }
+        let _ = slint::quit_event_loop();
     }
 
     fn add_custom_dns(&self, name: &str, address: &str, bootstrap: &str) -> String {
@@ -761,7 +744,7 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
             loop {
                 let r = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, INFINITE) };
                 if r == WAIT_OBJECT_0 {
-                    let _ = slint::invoke_from_event_loop(|| with_ctx(|c| c.fade_out_and_quit()));
+                    let _ = slint::invoke_from_event_loop(|| with_ctx(|c| c.quit_now()));
                     return;
                 }
                 if r != WAIT_OBJECT_0 + 1 {
@@ -798,6 +781,11 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
         }
         if std::env::var_os("GDPI3_LIGHT").is_some() {
             app.global::<Theme>().set_dark(false);
+        }
+        // Gercek acilistaki gibi tercihler (ve pencere cercevesi) sonradan yeniden uygulansin:
+        // servisten durum gelince first_run_tasks bunu yapar; test modunda o adim atlanir.
+        if let Some(ms) = std::env::var("GDPI3_REAPPLY_MS").ok().and_then(|v| v.parse::<u64>().ok()) {
+            Timer::single_shot(Duration::from_millis(ms), || with_ctx(|c| c.apply_prefs()));
         }
     }
 

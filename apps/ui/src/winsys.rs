@@ -219,20 +219,6 @@ pub fn set_window_icons(hwnd: HWND) {
     }
 }
 
-/// Pencereyi katmanli yapip saydamligini ayarlar (kapanirken solma icin).
-pub fn set_window_alpha(hwnd: HWND, alpha: u8) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, SetWindowLongPtrW, WS_EX_LAYERED,
-    };
-    unsafe {
-        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        if ex & WS_EX_LAYERED as isize == 0 {
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED as isize);
-        }
-        SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
-    }
-}
-
 /// Sistem cercevesini temaya uydurur: koyu modda koyu golge ve ince koyu kenar cizgisi.
 pub fn set_window_theme(hwnd: HWND, dark: bool) {
     use windows_sys::Win32::Graphics::Dwm::{DWMWA_BORDER_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
