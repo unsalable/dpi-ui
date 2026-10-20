@@ -1,0 +1,166 @@
+//! GoodbyeDPI UI 3 motor hizmeti.
+//!
+//! Kullanim:
+//!   GoodbyeDPI3-Service.exe --service      (Windows hizmet yoneticisi baslatir)
+//!   GoodbyeDPI3-Service.exe --console      (gelistirme: on planda calistir, yonetici)
+//!   GoodbyeDPI3-Service.exe --install [--manual]
+//!   GoodbyeDPI3-Service.exe --uninstall
+
+mod conflicts;
+mod controller;
+mod engine_loop;
+mod log;
+mod pipe;
+mod scm;
+mod store;
+
+use std::ffi::OsString;
+use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::Duration;
+
+use windows_service::service::{ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType};
+use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
+use windows_service::{define_windows_service, service_dispatcher};
+
+use controller::Controller;
+
+struct App {
+    ctrl: Arc<Controller>,
+    pipe: pipe::PipeServer,
+}
+
+impl App {
+    fn start(as_service: bool) -> App {
+        store::ensure_data_dir();
+        log::init(!as_service, Some(shared::paths::log_dir().join("service.log")));
+        info!("{} motoru {} başlıyor ({}).", shared::PRODUCT_NAME, shared::VERSION, if as_service { "hizmet" } else { "konsol" });
+
+        let exe_dir = shared::paths::exe_dir().unwrap_or_default();
+        let (ctrl, rx) = Controller::new(exe_dir, as_service);
+        ctrl.spawn_worker(rx);
+        if ctrl.config().auto_connect {
+            let _ = ctrl.connect();
+        }
+        let pipe = pipe::start(ctrl.clone());
+        App { ctrl, pipe }
+    }
+
+    fn stop(self) {
+        info!("Motor hizmeti kapanıyor.");
+        self.pipe.stop();
+        self.ctrl.shutdown();
+    }
+}
+
+define_windows_service!(ffi_service_main, service_main);
+
+fn service_main(_args: Vec<OsString>) {
+    if let Err(e) = run_service() {
+        error!("Hizmet hatası: {e}");
+    }
+}
+
+fn run_service() -> windows_service::Result<()> {
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let handler = move |event| match event {
+        ServiceControl::Stop | ServiceControl::Shutdown | ServiceControl::Preshutdown => {
+            let _ = stop_tx.send(());
+            ServiceControlHandlerResult::NoError
+        }
+        ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
+        _ => ServiceControlHandlerResult::NotImplemented,
+    };
+    let status = service_control_handler::register(shared::SERVICE_NAME, handler)?;
+    let report = |state, accept, wait| ServiceStatus {
+        service_type: ServiceType::OWN_PROCESS,
+        current_state: state,
+        controls_accepted: accept,
+        exit_code: ServiceExitCode::Win32(0),
+        checkpoint: 0,
+        wait_hint: wait,
+        process_id: None,
+    };
+
+    status.set_service_status(report(ServiceState::StartPending, ServiceControlAccept::empty(), Duration::from_secs(10)))?;
+    let app = App::start(true);
+    status.set_service_status(report(
+        ServiceState::Running,
+        ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+        Duration::default(),
+    ))?;
+
+    let _ = stop_rx.recv();
+    status.set_service_status(report(ServiceState::StopPending, ServiceControlAccept::empty(), Duration::from_secs(10)))?;
+    app.stop();
+    status.set_service_status(report(ServiceState::Stopped, ServiceControlAccept::empty(), Duration::default()))?;
+    Ok(())
+}
+
+fn run_console() {
+    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+    static STOP: std::sync::OnceLock<mpsc::Sender<()>> = std::sync::OnceLock::new();
+    unsafe extern "system" fn on_ctrl(_: u32) -> i32 {
+        if let Some(tx) = STOP.get() {
+            let _ = tx.send(());
+        }
+        1
+    }
+    let (tx, rx) = mpsc::channel();
+    let _ = STOP.set(tx);
+    unsafe { SetConsoleCtrlHandler(Some(on_ctrl), 1) };
+
+    let app = App::start(false);
+    println!("Çalışıyor. Durdurmak için Ctrl+C.");
+    let _ = rx.recv();
+    app.stop();
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let has = |flag: &str| args.iter().any(|a| a.eq_ignore_ascii_case(flag));
+
+    let code = if has("--service") {
+        match service_dispatcher::start(shared::SERVICE_NAME, ffi_service_main) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("Hizmet yöneticisi tarafından başlatılmadı: {e}");
+                1
+            }
+        }
+    } else if has("--console") {
+        run_console();
+        0
+    } else if has("--install") {
+        let exe = std::env::current_exe().unwrap_or_default();
+        match scm::install(&exe, !has("--manual")) {
+            Ok(()) => {
+                println!("Hizmet kuruldu: {}", shared::SERVICE_NAME);
+                0
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                1
+            }
+        }
+    } else if has("--uninstall") {
+        match scm::uninstall() {
+            Ok(()) => {
+                println!("Hizmet kaldırıldı.");
+                0
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                1
+            }
+        }
+    } else {
+        println!(
+            "{} motoru {}\n\n  --console     on planda calistir (yonetici)\n  --install     hizmeti kur [--manual]\n  --uninstall   hizmeti kaldir",
+            shared::PRODUCT_NAME,
+            shared::VERSION
+        );
+        0
+    };
+    std::process::exit(code);
+}

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/ui", "crates/engine", "crates/windivert"]
+members = ["apps/service", "apps/ui", "crates/engine", "crates/shared", "crates/windivert"]
 
 [workspace.package]
 version = "3.0.0-alpha.1"
