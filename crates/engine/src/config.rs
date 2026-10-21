@@ -143,43 +143,50 @@ impl DpiConfig {
     }
 
     /// Yalnizca yontemi ayirt eden kisim (sahte paket + bolme); listelerde tek satir.
-    pub fn short_summary(&self) -> String {
-        let full = self.summary();
-        let parts: Vec<&str> = full.split(" · ").filter(|p| *p != "QUIC engeli" && *p != "Discord ses").collect();
-        if parts.is_empty() { "Yalnızca QUIC engeli ve Discord ses desteği".to_owned() } else { parts.join(" · ") }
+    /// `en`: Ingilizce.
+    pub fn short_summary(&self, en: bool) -> String {
+        let (quic, voice) = if en { ("QUIC block", "Discord voice") } else { ("QUIC engeli", "Discord ses") };
+        let full = self.summary(en);
+        let parts: Vec<&str> = full.split(" · ").filter(|p| *p != quic && *p != voice).collect();
+        if !parts.is_empty() {
+            return parts.join(" · ");
+        }
+        (if en { "Only QUIC block and Discord voice support" } else { "Yalnızca QUIC engeli ve Discord ses desteği" }).to_owned()
     }
 
-    /// Listede gorunen kisa ozet.
-    pub fn summary(&self) -> String {
+    /// Listede gorunen kisa ozet. `en`: Ingilizce.
+    pub fn summary(&self, en: bool) -> String {
+        let tr = |tr: &'static str, eng: &'static str| if en { eng } else { tr };
         let mut parts: Vec<String> = Vec::with_capacity(4);
         if self.fake_packet {
             let how = if self.auto_ttl && self.fake_ttl {
-                "oto TTL".to_owned()
+                tr("oto TTL", "auto TTL").to_owned()
             } else if self.fake_ttl {
                 format!("TTL {}", self.ttl)
             } else if self.fake_md5sig {
                 "MD5".to_owned()
             } else if self.fake_wrong_checksum || self.fake_wrong_seq {
-                "bozuk sağlama".to_owned()
+                tr("bozuk sağlama", "bad checksum").to_owned()
             } else {
-                "korumasız".to_owned()
+                tr("korumasız", "unprotected").to_owned()
             };
-            let payload = if self.fake_payload == FakePayload::Zeros { "boş sahte" } else { "sahte paket" };
-            parts.push(if self.split_fake { format!("{payload} ({how}, bölünmüş)") } else { format!("{payload} ({how})") });
+            let payload = if self.fake_payload == FakePayload::Zeros { tr("boş sahte", "empty fake") } else { tr("sahte paket", "fake packet") };
+            parts.push(if self.split_fake { format!("{payload} ({how}, {})", tr("bölünmüş", "split")) } else { format!("{payload} ({how})") });
         }
         if self.split_tls {
-            let mut s = if self.reverse_split { "ters sıra bölme".to_owned() } else { "bölme".to_owned() };
+            let mut s = tr(if self.reverse_split { "ters sıra bölme" } else { "bölme" }, if self.reverse_split { "reverse-order split" } else { "split" })
+                .to_owned();
             if self.seq_overlap > 0 {
-                s.push_str(&format!(" +{} örtüşme", self.seq_overlap));
+                s.push_str(&format!(" +{} {}", self.seq_overlap, tr("örtüşme", "overlap")));
             }
             parts.push(s);
         }
         if self.block_quic {
-            parts.push("QUIC engeli".to_owned());
+            parts.push(tr("QUIC engeli", "QUIC block").to_owned());
         }
         if self.voice_fake {
-            parts.push("Discord ses".to_owned());
+            parts.push(tr("Discord ses", "Discord voice").to_owned());
         }
-        if parts.is_empty() { "Atlatma tekniği seçilmedi.".to_owned() } else { parts.join(" · ") }
+        if parts.is_empty() { tr("Atlatma tekniği seçilmedi.", "No bypass technique selected.").to_owned() } else { parts.join(" · ") }
     }
 }

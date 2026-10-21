@@ -37,11 +37,11 @@ export global AppState {
     // ---------------------------------------------------------------- durum
     in-out property <PowerState> power: PowerState.off;
     in-out property <bool> service-missing: false;
-    in-out property <string> status-title: "Kapalı";
-    in-out property <string> status-sub: "Bağlanmak için dokun";
+    in-out property <string> status-title: @tr("Kapalı");
+    in-out property <string> status-sub: @tr("Bağlanmak için dokun");
     /// Bos degilse ana ekranda uyari seridi.
     in-out property <string> banner;
-    in-out property <string> method-name: "Varsayılan";
+    in-out property <string> method-name: @tr("Varsayılan");
     in-out property <string> dns-name: "Cloudflare DoH";
 
     // ---------------------------------------------------------------- baglanti
@@ -79,10 +79,12 @@ export global AppState {
     in-out property <bool> close-to-tray: true;
     /// 0 = sistem, 1 = koyu, 2 = acik
     in-out property <int> theme-index;
+    /// 0 = sistem, 1 = Turkce, 2 = Ingilizce
+    in-out property <int> language-index;
     in-out property <string> version;
 
     // ---------------------------------------------------------------- guncelleme
-    in-out property <string> update-text: "Henüz denetlenmedi";
+    in-out property <string> update-text: @tr("Henüz denetlenmedi");
     in-out property <bool> update-ready;
     in-out property <bool> update-busy;
     in-out property <bool> auto-update: true;
@@ -122,6 +124,7 @@ export global AppState {
     callback set-tray-at-login(bool);
     callback set-close-to-tray(bool);
     callback select-theme(int);
+    callback select-language(int);
     callback open-url(string);
     callback open-logs();
 }

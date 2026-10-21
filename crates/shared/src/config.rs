@@ -1,6 +1,7 @@
 //! Servisin sakladigi uygulama ayarlari (`%ProgramData%\GoodbyeDPI3\config.json`).
 //! Tek dogruluk kaynagi servistir; arayuz degisiklikleri IPC ile gonderir ve
-//! servis dogrulayip kaydeder. Arayuze ozel tercihler (tema, dil) ayri tutulur.
+//! servis dogrulayip kaydeder. Arayuze ozel tercihler (tema) ayri tutulur; dil buradadir
+//! cunku servisin arayuze gonderdigi mesajlar da o dilde olmali.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -8,6 +9,8 @@ use engine::{DpiConfig, ScopeMode, presets};
 use serde::{Deserialize, Serialize};
 
 use crate::dns;
+use crate::i18n::Language;
+use crate::t;
 
 pub const CONFIG_VERSION: u32 = 1;
 
@@ -37,6 +40,8 @@ pub struct AppConfig {
     /// Bu surecler calisirken motor duraklatilir (anti-cheat uyumu).
     pub pause_for: Vec<String>,
     pub verbose_log: bool,
+    /// Arayuz, tepsi ve servis mesajlarinin dili.
+    pub language: Language,
 }
 
 impl Default for AppConfig {
@@ -54,6 +59,7 @@ impl Default for AppConfig {
             update_channel: UpdateChannel::Stable,
             pause_for: Vec::new(),
             verbose_log: false,
+            language: Language::System,
         }
     }
 }
@@ -141,28 +147,34 @@ impl CustomDns {
                 let v4 = self.v4.trim();
                 let v6 = self.v6.trim();
                 if v4.is_empty() && v6.is_empty() {
-                    return Err("En az bir IPv4 ya da IPv6 adresi gir.".into());
+                    return Err(t!("En az bir IPv4 ya da IPv6 adresi gir.", "Enter at least one IPv4 or IPv6 address."));
                 }
                 if !v4.is_empty() && v4.parse::<Ipv4Addr>().is_err() {
-                    return Err(format!("“{v4}” geçerli bir IPv4 adresi değil."));
+                    return Err(t!("“{v4}” geçerli bir IPv4 adresi değil.", "“{v4}” isn't a valid IPv4 address."));
                 }
                 if !v6.is_empty() && v6.parse::<Ipv6Addr>().is_err() {
-                    return Err(format!("“{v6}” geçerli bir IPv6 adresi değil."));
+                    return Err(t!("“{v6}” geçerli bir IPv6 adresi değil.", "“{v6}” isn't a valid IPv6 address."));
                 }
                 Ok(())
             }
             CustomDnsKind::Doh => {
                 let url = self.doh_url.trim();
                 if dns::url_host(url).is_none() {
-                    return Err("Adres https:// (DoH) ya da tls:// (DoT) ile başlamalı (örn. https://dns.ornek.com/dns-query).".into());
+                    return Err(t!(
+                        "Adres https:// (DoH) ya da tls:// (DoT) ile başlamalı (örn. https://dns.ornek.com/dns-query).",
+                        "The address must start with https:// (DoH) or tls:// (DoT) (e.g. https://dns.example.com/dns-query)."
+                    ));
                 }
                 let ips = self.bootstrap_ips();
                 if ips.is_empty() {
-                    return Err("DoH sunucusunun IP adresini de gir (başlangıç adresi).".into());
+                    return Err(t!(
+                        "DoH sunucusunun IP adresini de gir (başlangıç adresi).",
+                        "Also enter the DoH server's IP address (bootstrap address)."
+                    ));
                 }
                 for ip in self.bootstrap.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                     if ip.parse::<std::net::IpAddr>().is_err() {
-                        return Err(format!("“{ip}” geçerli bir IP adresi değil."));
+                        return Err(t!("“{ip}” geçerli bir IP adresi değil.", "“{ip}” isn't a valid IP address."));
                     }
                 }
                 Ok(())
@@ -237,7 +249,7 @@ pub enum ActiveDns {
 impl ActiveDns {
     pub fn display_name(&self) -> String {
         match self {
-            Self::Off => "Sistem DNS'i".into(),
+            Self::Off => t!("Sistem DNS'i", "System DNS"),
             Self::Encrypted { name, .. } => format!("{name} DoH"),
             Self::Redirect { name, v4, v6 } => {
                 let port = v4.map(|(_, p)| p).or(v6.map(|(_, p)| p)).unwrap_or(53);
@@ -293,20 +305,20 @@ impl AppConfig {
     /// Arayuzden gelen ayar icin kullaniciya gosterilecek hata.
     pub fn validate(&self) -> Result<(), String> {
         if self.resolve_method_opt().is_none() {
-            return Err("Seçili yöntem bulunamadı.".into());
+            return Err(t!("Seçili yöntem bulunamadı.", "The selected method wasn't found."));
         }
         for d in &self.dns.custom {
             d.validate().map_err(|e| format!("{}: {e}", d.name))?;
         }
         if self.dns.mode != DnsMode::Off && self.resolve_dns_opt().is_none() {
-            return Err("Seçili DNS bu modu desteklemiyor ya da bulunamadı.".into());
+            return Err(t!("Seçili DNS bu modu desteklemiyor ya da bulunamadı.", "The selected DNS doesn't support this mode or wasn't found."));
         }
         Ok(())
     }
 
     fn resolve_method_opt(&self) -> Option<ActiveMethod> {
         if let Some(m) = presets::method(&self.method) {
-            return Some(ActiveMethod { id: m.id.into(), name: m.name.into(), config: m.config() });
+            return Some(ActiveMethod { id: m.id.into(), name: m.label(crate::i18n::english()).into(), config: m.config() });
         }
         self.custom_methods
             .iter()
@@ -317,7 +329,7 @@ impl AppConfig {
     pub fn active_method(&self) -> ActiveMethod {
         self.resolve_method_opt().unwrap_or_else(|| ActiveMethod {
             id: presets::DEFAULT.id.into(),
-            name: presets::DEFAULT.name.into(),
+            name: presets::DEFAULT.label(crate::i18n::english()).into(),
             config: presets::DEFAULT.config(),
         })
     }
@@ -329,12 +341,12 @@ impl AppConfig {
         if let Some(p) = dns::preset(&self.dns.provider) {
             return match self.dns.mode {
                 DnsMode::Encrypted if p.supports_doh() => Some(ActiveDns::Encrypted {
-                    name: p.name.into(),
+                    name: p.label(crate::i18n::english()).into(),
                     url: p.doh_url.into(),
                     bootstrap: p.bootstrap_v4.iter().chain(p.bootstrap_v6).filter_map(|s| s.parse().ok()).collect(),
                 }),
                 DnsMode::Redirect if p.supports_redirect() => Some(ActiveDns::Redirect {
-                    name: p.name.into(),
+                    name: p.label(crate::i18n::english()).into(),
                     v4: p.udp_v4.and_then(|(a, port)| Some((a.parse().ok()?, port))),
                     v6: p.udp_v6.and_then(|(a, port)| Some((a.parse().ok()?, port))),
                 }),

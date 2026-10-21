@@ -40,7 +40,7 @@ fn main() {
     };
     if let Err(e) = window::run(show_event) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};
-        let text = winsys::wide(&format!("Pencere açılamadı: {e}"));
+        let text = winsys::wide(&shared::t!("Pencere açılamadı: {e}", "Couldn't open the window: {e}"));
         let title = winsys::wide("DPI UI");
         unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_ICONERROR) };
     }

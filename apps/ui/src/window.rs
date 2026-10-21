@@ -8,6 +8,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use engine::presets;
 use shared::config::{AppConfig, CustomDns, CustomDnsKind, DnsMode, UpdateMode};
+use shared::i18n::{self, Language};
+use shared::t;
 use shared::update::{UpdateState, UpdateStatus};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, StateSnapshot};
 use slint::winit_030::{WinitWindowAccessor, winit};
@@ -123,7 +125,7 @@ impl Ctx {
     /// yeni ayar olay olarak gelince guncellenir.
     fn edit(&self, f: impl FnOnce(&mut AppConfig)) {
         let (Some(mut cfg), Some(client)) = (self.config.borrow().clone(), self.client()) else {
-            self.toast("Motor hizmetine bağlı değil.", true);
+            self.toast(&t!("Motor hizmetine bağlı değil.", "Not connected to the engine service."), true);
             return;
         };
         f(&mut cfg);
@@ -153,9 +155,12 @@ impl Ctx {
                     *self.engine.borrow_mut() = status;
                     self.apply_engine();
                 }
-                Event::Config { config } => self.apply_config(*config),
+                Event::Config { config } => {
+                    self.apply_language(config.language);
+                    self.apply_config(*config);
+                }
                 Event::Learned { host } => {
-                    self.toast(&format!("{} açılmıyordu; artık otomatik atlatılıyor.", host.host), false);
+                    self.toast(&t!("{} açılmıyordu; artık otomatik atlatılıyor.", "{} wasn't loading; it's now bypassed automatically.", host.host), false);
                     self.learned.borrow_mut().push(host);
                     self.apply_learned();
                 }
@@ -170,7 +175,7 @@ impl Ctx {
                     self.apply_update();
                     if failed_now && self.update_requested.get() {
                         if let UpdateState::Failed { message } = &self.update.borrow().state {
-                            self.toast(&format!("Güncelleme denetlenemedi: {message}"), true);
+                            self.toast(&t!("Güncelleme denetlenemedi: {message}", "Couldn't check for updates: {message}"), true);
                         }
                     }
                     self.close_for_update();
@@ -189,6 +194,7 @@ impl Ctx {
         }
         let fresh = state.config == AppConfig::default().sanitized();
         *self.update.borrow_mut() = state.update;
+        self.apply_language(state.config.language);
         self.apply_config(state.config);
         self.apply_learned();
         self.apply_engine();
@@ -206,13 +212,13 @@ impl Ctx {
         let st = app.global::<AppState>();
         let u = self.update.borrow();
         let (text, ready, busy) = match &u.state {
-            UpdateState::Idle => ("Henüz denetlenmedi".to_owned(), false, false),
-            UpdateState::Checking => ("Denetleniyor…".to_owned(), false, true),
-            UpdateState::UpToDate => ("Güncel".to_owned(), false, false),
-            UpdateState::Downloading { version, percent } => (format!("{version} indiriliyor · %{percent}"), false, true),
-            UpdateState::Ready { version, .. } => (format!("{version} hazır"), true, false),
-            UpdateState::Installing { version } => (format!("{version} yükleniyor…"), false, true),
-            UpdateState::Failed { .. } => ("Denetlenemedi".to_owned(), false, false),
+            UpdateState::Idle => (t!("Henüz denetlenmedi", "Not checked yet"), false, false),
+            UpdateState::Checking => (t!("Denetleniyor…", "Checking…"), false, true),
+            UpdateState::UpToDate => (t!("Güncel", "Up to date"), false, false),
+            UpdateState::Downloading { version, percent } => (t!("{version} indiriliyor · %{percent}", "Downloading {version} · {percent}%"), false, true),
+            UpdateState::Ready { version, .. } => (t!("{version} hazır", "{version} ready"), true, false),
+            UpdateState::Installing { version } => (t!("{version} yükleniyor…", "Installing {version}…"), false, true),
+            UpdateState::Failed { .. } => (t!("Denetlenemedi", "Couldn't check"), false, false),
         };
         st.set_update_text(s(text));
         st.set_update_ready(ready);
@@ -222,7 +228,7 @@ impl Ctx {
     /// "Simdi yukle" ("Otomatik yukle" kapaliyken). Kurulumu servis sessizce yapar.
     fn install_update(&self) {
         let Some(client) = self.client() else {
-            self.toast("Motor hizmetine bağlı değil.", true);
+            self.toast(&t!("Motor hizmetine bağlı değil.", "Not connected to the engine service."), true);
             return;
         };
         client.request(Request::InstallUpdate, |r| {
@@ -239,7 +245,13 @@ impl Ctx {
         if self.closing.get() || self.update_closing.replace(true) {
             return;
         }
-        self.toast(&format!("Sürüm {version} yükleniyor; uygulama birkaç saniye içinde yeniden açılacak."), false);
+        self.toast(
+            &t!(
+                "Sürüm {version} yükleniyor; uygulama birkaç saniye içinde yeniden açılacak.",
+                "Installing version {version}; the app will reopen in a few seconds."
+            ),
+            false,
+        );
         Timer::single_shot(UPDATE_CLOSE_DELAY, || with_ctx(|c| c.quit_now()));
     }
 
@@ -250,24 +262,24 @@ impl Ctx {
         st.set_service_missing(!self.connected.get());
         if !self.connected.get() {
             st.set_power(PowerState::Off);
-            st.set_status_title(s("Motor hizmeti kapalı"));
-            st.set_status_sub(s("Başlatmak için dokun"));
+            st.set_status_title(s(t!("Motor hizmeti kapalı", "Engine service is off")));
+            st.set_status_sub(s(t!("Başlatmak için dokun", "Tap to start")));
             st.set_banner(s(""));
             return;
         }
         let (mut power, mut title, mut sub) = match e.state {
-            EngineState::Off => (PowerState::Off, "Kapalı".to_owned(), "Bağlanmak için dokun".to_owned()),
-            EngineState::Starting => (PowerState::Connecting, "Bağlanıyor…".to_owned(), String::new()),
-            EngineState::On => (PowerState::On, "Korumalı".to_owned(), String::new()),
+            EngineState::Off => (PowerState::Off, t!("Kapalı", "Off"), t!("Bağlanmak için dokun", "Tap to connect")),
+            EngineState::Starting => (PowerState::Connecting, t!("Bağlanıyor…", "Connecting…"), String::new()),
+            EngineState::On => (PowerState::On, t!("Korumalı", "Protected"), String::new()),
             EngineState::Paused => (
                 PowerState::Off,
-                "Duraklatıldı".to_owned(),
-                e.message.clone().unwrap_or_else(|| "Bir uygulama için geçici olarak durduruldu".into()),
+                t!("Duraklatıldı", "Paused"),
+                e.message.clone().unwrap_or_else(|| t!("Bir uygulama için geçici olarak durduruldu", "Temporarily stopped for an app")),
             ),
             EngineState::Error => (
                 PowerState::Error,
-                "Bağlanamadı".to_owned(),
-                e.message.clone().unwrap_or_else(|| "Bilinmeyen hata".into()),
+                t!("Bağlanamadı", "Couldn't connect"),
+                e.message.clone().unwrap_or_else(|| t!("Bilinmeyen hata", "Unknown error")),
             ),
         };
         if let Some(since) = self.pending_connect.get() {
@@ -278,7 +290,7 @@ impl Ctx {
                 if settled {
                     Timer::single_shot(MIN_BUSY - elapsed, || with_ctx(|c| c.apply_engine()));
                 }
-                (power, title, sub) = (PowerState::Connecting, "Bağlanıyor…".to_owned(), String::new());
+                (power, title, sub) = (PowerState::Connecting, t!("Bağlanıyor…", "Connecting…"), String::new());
             } else {
                 self.pending_connect.set(None);
             }
@@ -292,7 +304,11 @@ impl Ctx {
         let conflicts = self.conflicts.borrow();
         let banner = if !conflicts.is_empty() {
             let names: Vec<&str> = conflicts.iter().map(|c| c.description.as_str()).collect();
-            format!("{}. Aynı anda iki DPI aracı bağlantıları bozabilir; diğerini kapat.", names.join(", "))
+            t!(
+                "{}. Aynı anda iki DPI aracı bağlantıları bozabilir; diğerini kapat.",
+                "{}. Running two DPI tools at once can break connections; close the other one.",
+                names.join(", ")
+            )
         } else if e.state == EngineState::On {
             e.message.clone().unwrap_or_default()
         } else {
@@ -307,10 +323,11 @@ impl Ctx {
         let Some(app) = self.ui() else { return };
         let st = app.global::<AppState>();
 
+        let en = i18n::english();
         // Saglayicilar.
         let isps: Vec<Choice> = presets::ISPS
             .iter()
-            .map(|i| Choice { id: s(i.id), title: s(i.name), subtitle: s(i.description), badge: s("") })
+            .map(|i| Choice { id: s(i.id), title: s(i.label(en)), subtitle: s(i.about(en)), badge: s("") })
             .collect();
         let isp_index = presets::ISPS.iter().position(|i| i.id.eq_ignore_ascii_case(&cfg.isp)).unwrap_or(0);
         st.set_isp_names(model(isps.iter().map(|c| c.title.clone()).collect()));
@@ -323,20 +340,20 @@ impl Ctx {
         let mut items: Vec<Choice> = Vec::new();
         for (n, id) in isp.methods.iter().enumerate() {
             if let Some(m) = presets::method(id) {
-                let badge = if n == 0 { "Önerilen" } else { "" };
-                items.push(Choice { id: s(m.id), title: s(m.name), subtitle: s(m.config().short_summary()), badge: s(badge) });
+                let badge = if n == 0 { t!("Önerilen", "Recommended") } else { String::new() };
+                items.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.config().short_summary(en)), badge: s(badge) });
                 ids.push(m.id.into());
             }
         }
         for m in presets::ALL.iter().filter(|m| !isp.methods.contains(&m.id)) {
-            items.push(Choice { id: s(m.id), title: s(m.name), subtitle: s(m.config().short_summary()), badge: s("") });
+            items.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.config().short_summary(en)), badge: s("") });
             ids.push(m.id.into());
         }
         for c in &cfg.custom_methods {
             items.push(Choice {
                 id: s(c.id.as_str()),
-                title: s(format!("Özel · {}", c.name)),
-                subtitle: s(c.config.short_summary()),
+                title: s(t!("Özel · {}", "Custom · {}", c.name)),
+                subtitle: s(c.config.short_summary(en)),
                 badge: s(""),
             });
             ids.push(c.id.clone());
@@ -364,11 +381,11 @@ impl Ctx {
                 let detail = match cfg.dns.mode {
                     DnsMode::Redirect => {
                         let (a, port) = p.udp_v4.unwrap_or(("", 53));
-                        format!("{} · {a}:{port}", p.description)
+                        format!("{} · {a}:{port}", p.about(en))
                     }
-                    _ => format!("{} · {}", p.description, if p.doh_url.starts_with("tls://") { "DoT" } else { "DoH" }),
+                    _ => format!("{} · {}", p.about(en), if p.doh_url.starts_with("tls://") { "DoT" } else { "DoH" }),
                 };
-                providers.push(Choice { id: s(p.id), title: s(p.name), subtitle: s(detail), badge: s("") });
+                providers.push(Choice { id: s(p.id), title: s(p.label(en)), subtitle: s(detail), badge: s("") });
                 dns_ids.push(p.id.to_owned());
             }
         }
@@ -377,7 +394,7 @@ impl Ctx {
             if fits {
                 providers.push(Choice {
                     id: s(c.id.as_str()),
-                    title: s(format!("Özel · {}", c.name)),
+                    title: s(t!("Özel · {}", "Custom · {}", c.name)),
                     subtitle: s(custom_dns_address(c)),
                     badge: s(""),
                 });
@@ -431,9 +448,38 @@ impl Ctx {
             .borrow()
             .iter()
             .rev()
-            .map(|h| HostItem { key: s(h.host.as_str()), name: s(h.host.as_str()), note: s(h.reason.as_str()) })
+            .map(|h| HostItem { key: s(h.host.as_str()), name: s(h.host.as_str()), note: s(learn_reason(&h.reason)) })
             .collect();
         app.global::<AppState>().set_learned(model(items));
+    }
+
+    /// Dili uygular: Slint ekranlari (`@tr`) ve Rust'in urettigi metinler birlikte degisir.
+    /// Son secim tercihlere de yazilir; pencere bir sonraki acilista ayar gelmeden o dilde acilir.
+    fn apply_language(&self, language: Language) {
+        let was_english = i18n::english();
+        i18n::set(language);
+        let _ = slint::select_bundled_translation(if i18n::english() { "en" } else { "" });
+        if let Some(app) = self.ui() {
+            let index = match language {
+                Language::System => 0,
+                Language::Turkish => 1,
+                Language::English => 2,
+            };
+            app.global::<AppState>().set_language_index(index);
+        }
+        if self.prefs.borrow().language != language && !self.test_mode {
+            self.prefs.borrow_mut().language = language;
+            self.save_prefs();
+        }
+        if was_english != i18n::english() {
+            let cfg = self.config.borrow().clone();
+            if let Some(cfg) = cfg {
+                self.apply_config(cfg);
+            }
+            self.apply_engine();
+            self.apply_update();
+            self.apply_learned();
+        }
     }
 
     fn apply_prefs(&self) {
@@ -474,10 +520,10 @@ impl Ctx {
                             p.theme = if dark { 1 } else { 2 };
                         }
                         if let Some(client) = self.client() {
-                            let summary = if m.summary.is_empty() { "varsayılanlar".to_owned() } else { m.summary.join(", ") };
+                            let summary = if m.summary.is_empty() { t!("varsayılanlar", "defaults") } else { m.summary.join(", ") };
                             client.request(Request::SetConfig { config: Box::new(m.config) }, move |r| match r {
-                                Response::Ok => post_toast(format!("Eski sürüm ayarların aktarıldı: {summary}."), false),
-                                Response::Error { message } => post_toast(format!("Eski ayarlar aktarılamadı: {message}"), true),
+                                Response::Ok => post_toast(t!("Eski sürüm ayarların aktarıldı: {summary}.", "Your settings from the old version were imported: {summary}."), false),
+                                Response::Error { message } => post_toast(t!("Eski ayarlar aktarılamadı: {message}", "Couldn't import the old settings: {message}"), true),
                                 _ => {}
                             });
                         }
@@ -586,7 +632,7 @@ impl Ctx {
                                         ms: ms as i32,
                                         ok,
                                         ratio,
-                                        note: s(if ok { format!("{ms} ms") } else { "hata".into() }),
+                                        note: s(if ok { format!("{ms} ms") } else { t!("hata", "error") }),
                                     }
                                 })
                                 .collect();
@@ -602,14 +648,14 @@ impl Ctx {
 
     fn add_host(&self, host: &str, excluded: bool) -> String {
         let Some(name) = engine::scope::normalize(host) else {
-            return "Geçerli bir alan adı gir (örn. site.com).".into();
+            return t!("Geçerli bir alan adı gir (örn. site.com).", "Enter a valid domain (e.g. site.com).");
         };
         let exists = self.config.borrow().as_ref().is_some_and(|c| {
             let list = if excluded { &c.scope.excluded } else { &c.scope.targets };
             list.iter().any(|h| h == &name)
         });
         if exists {
-            return "Zaten listede.".into();
+            return t!("Zaten listede.", "Already in the list.");
         }
         self.edit(|c| {
             if excluded { c.scope.excluded.push(name) } else { c.scope.targets.push(name) }
@@ -633,13 +679,22 @@ impl Ctx {
 
 }
 
-fn category_title(id: &str) -> &'static str {
+fn category_title(id: &str) -> String {
     match id {
-        "discord" => "Discord",
-        "roblox" => "Roblox",
-        "wattpad" => "Wattpad",
-        "vpn" => "VPN sağlayıcılarının siteleri",
-        _ => "Diğer",
+        "discord" => "Discord".into(),
+        "roblox" => "Roblox".into(),
+        "wattpad" => "Wattpad".into(),
+        "vpn" => t!("VPN sağlayıcılarının siteleri", "VPN providers' sites"),
+        _ => t!("Diğer", "Other"),
+    }
+}
+
+/// Servisin ogrenilen siteye yazdigi neden (kayitta Turkce durur).
+fn learn_reason(reason: &str) -> String {
+    match reason {
+        "yanıtsız kaldı" => t!("yanıtsız kaldı", "timed out"),
+        "bağlantı sıfırlandı" => t!("bağlantı sıfırlandı", "connection reset"),
+        other => other.to_owned(),
     }
 }
 
@@ -675,9 +730,9 @@ fn new_custom_id(taken: &[String]) -> String {
 fn parse_custom_dns(name: &str, address: &str, bootstrap: &str) -> Result<CustomDns, String> {
     let a = address.trim();
     if a.is_empty() {
-        return Err("Bir adres gir.".into());
+        return Err(t!("Bir adres gir.", "Enter an address."));
     }
-    let name = if name.trim().is_empty() { "Özel DNS".to_owned() } else { name.trim().to_owned() };
+    let name = if name.trim().is_empty() { t!("Özel DNS", "Custom DNS") } else { name.trim().to_owned() };
     let mut d = CustomDns { name, ..CustomDns::default() };
     if a.starts_with("https://") || a.starts_with("tls://") {
         d.kind = CustomDnsKind::Doh;
@@ -706,7 +761,10 @@ fn parse_custom_dns(name: &str, address: &str, bootstrap: &str) -> Result<Custom
             }
         }
     } else {
-        return Err("Adres anlaşılamadı. IP (1.2.3.4), IP:port ya da https://… / tls://… gir.".into());
+        return Err(t!(
+            "Adres anlaşılamadı. IP (1.2.3.4), IP:port ya da https://… / tls://… gir.",
+            "Couldn't understand the address. Enter an IP (1.2.3.4), IP:port or https://… / tls://…."
+        ));
     }
     d.validate()?;
     Ok(d)
@@ -718,6 +776,8 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
     let app = AppWindow::new()?;
     let ctx = Rc::new(Ctx::new(&app, prefs::load(), std::env::var_os("GDPI3_TEST").is_some()));
     CTX.with(|c| *c.borrow_mut() = Some(ctx.clone()));
+    let language = ctx.prefs.borrow().language;
+    ctx.apply_language(language);
     app.global::<Motion>().set_enabled(winsys::animations_enabled());
     ctx.apply_prefs();
     ctx.apply_engine();
@@ -875,7 +935,7 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_power_toggle(|| with_ctx(|c| c.power_toggle()));
     st.on_start_service(|| {
         with_ctx(|c| match winsys::start_service() {
-            Ok(()) => c.toast("Motor hizmeti başlatılıyor…", false),
+            Ok(()) => c.toast(&t!("Motor hizmeti başlatılıyor…", "Starting the engine service…"), false),
             Err(e) => c.toast(&e, true),
         })
     });
@@ -888,7 +948,8 @@ fn bind_callbacks(app: &AppWindow) {
                 cfg.method = rec.id.into();
             });
             if isp.id != "general" {
-                c.toast(&format!("{} için önerilen yöntem seçildi: {}.", isp.name, rec.name), false);
+                let en = i18n::english();
+                c.toast(&t!("{} için önerilen yöntem seçildi: {}.", "Recommended method for {} selected: {}.", isp.label(en), rec.label(en)), false);
             }
         })
     });
@@ -945,7 +1006,7 @@ fn bind_callbacks(app: &AppWindow) {
                 cfg.dns.mode = DnsMode::Encrypted;
                 cfg.dns.provider = id;
             });
-            c.toast("DNS değiştirildi.", false);
+            c.toast(&t!("DNS değiştirildi.", "DNS changed."), false);
         })
     });
     st.on_set_scope_mode(|i| {
@@ -1003,7 +1064,7 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_check_update(|| {
         with_ctx(|c| {
             let Some(client) = c.client() else {
-                c.toast("Motor hizmetine bağlı değil.", true);
+                c.toast(&t!("Motor hizmetine bağlı değil.", "Not connected to the engine service."), true);
                 return;
             };
             c.update_requested.set(true);
@@ -1016,7 +1077,7 @@ fn bind_callbacks(app: &AppWindow) {
         with_ctx(|c| {
             c.prefs.borrow_mut().tray_at_login = v;
             if !winsys::set_autorun(v) {
-                c.toast("Oturum açılışı ayarı yazılamadı.", true);
+                c.toast(&t!("Oturum açılışı ayarı yazılamadı.", "Couldn't save the sign-in setting."), true);
             }
             c.save_prefs();
             c.apply_prefs();
@@ -1036,6 +1097,17 @@ fn bind_callbacks(app: &AppWindow) {
             c.apply_prefs();
         })
     });
+    st.on_select_language(|i| {
+        let language = match i {
+            1 => Language::Turkish,
+            2 => Language::English,
+            _ => Language::System,
+        };
+        with_ctx(|c| {
+            c.apply_language(language);
+            c.edit(|cfg| cfg.language = language);
+        })
+    });
     st.on_open_url(|url| {
         if url.starts_with("https://") {
             winsys::shell_open(&url);
@@ -1046,7 +1118,7 @@ fn bind_callbacks(app: &AppWindow) {
         if log.exists() {
             winsys::shell_open(&log.display().to_string());
         } else {
-            with_ctx(|c| c.toast("Henüz günlük dosyası yok.", false));
+            with_ctx(|c| c.toast(&t!("Henüz günlük dosyası yok.", "There's no log file yet."), false));
         }
     });
 }

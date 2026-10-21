@@ -62,6 +62,10 @@ tr.V1Found=GoodbyeDPI UI'ın eski sürümü (2.x) bu bilgisayarda kurulu.%n%nİk
 en.V1Found=An older GoodbyeDPI UI (2.x) is installed.%n%nRunning two DPI tools at once can break connections. Uninstall the old version now?%n%nYour settings will be imported into the new version.
 tr.Launch=DPI UI uygulamasını aç
 en.Launch=Open DPI UI
+tr.InstallingService=Motor hizmeti kuruluyor...
+en.InstallingService=Installing the engine service...
+tr.StartingEngine=Motor başlatılıyor...
+en.StartingEngine=Starting the engine...
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -91,8 +95,9 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "GoodbyeDPI3"; Flags: uninsdeletevalue dontcreatekey
 
 [Run]
-Filename: "{app}\{#ServiceExe}"; Parameters: "--install"; Flags: runhidden waituntilterminated; StatusMsg: "Motor hizmeti kuruluyor..."
-Filename: "{sys}\net.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated; StatusMsg: "Motor başlatılıyor..."
+; --lang: ilk kurulumda uygulamanin dili kurulumda secilen dil olur (var olan ayara dokunulmaz).
+Filename: "{app}\{#ServiceExe}"; Parameters: "--install --lang {language}"; Flags: runhidden waituntilterminated; StatusMsg: "{cm:InstallingService}"
+Filename: "{sys}\net.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden waituntilterminated; StatusMsg: "{cm:StartingEngine}"
 Filename: "{app}\{#AppExe}"; Description: "{cm:Launch}"; Flags: postinstall nowait skipifsilent runasoriginaluser
 ; Elle kurulumda tepsi her durumda baslar: uygulama calisir ve oturum acilisina kaydolur.
 Filename: "{app}\{#AppExe}"; Parameters: "--tray"; Flags: nowait skipifsilent runasoriginaluser

@@ -47,6 +47,8 @@ impl Harness {
         slint::platform::set_platform(Box::new(TestPlatform { window: window.clone(), now_ms: now_ms.clone() }))
             .expect("platform zaten kurulu");
         let app = AppWindow::new().expect("pencere");
+        // Slint ilk bilesende sistem diline gecer; testler her makinede Turkce baslar.
+        slint::select_bundled_translation("").expect("ceviri secimi");
         let (width, height) = ((W * scale) as u32, (H * scale) as u32);
         window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: scale });
         window.set_size(PhysicalSize::new(width, height));
@@ -667,6 +669,116 @@ mod gallery {
                 h.shot(&format!("{t}-{name}"));
             }
         }
+    }
+
+    /// Ingilizce ekranlar (elle calistirilir: surecin dilini degistirdigi icin diger testlerle
+    /// ayni anda kosmamali). `GDPI3_SHOTS=<klasor> cargo test -p goodbyedpi3-ui english_pages -- --ignored`
+    #[test]
+    #[ignore]
+    fn english_pages() {
+        shared::i18n::set(shared::i18n::Language::English);
+        let mut h = Harness::new(1.0);
+        slint::select_bundled_translation("en").unwrap();
+        sample(&h, EngineState::On);
+        h.advance(1500);
+        h.shot("en-home");
+        h.app.set_depth(1);
+        h.advance(600);
+        h.shot("en-menu");
+        for (sub, name) in [(1, "method"), (2, "dns"), (3, "sites"), (4, "general"), (5, "appearance"), (6, "about")] {
+            h.app.set_depth(2);
+            h.app.set_sub(sub);
+            h.advance(600);
+            h.shot(&format!("en-{name}"));
+        }
+        h.app.set_sub(2);
+        h.advance(600);
+        h.scroll(200.0, 400.0, -700.0);
+        h.shot("en-dns-bottom");
+        shared::i18n::set(shared::i18n::Language::Turkish);
+    }
+}
+
+#[cfg(test)]
+mod translations {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// Acilan tirnaktan sonrasini okur: (metin, kalan).
+    fn quoted(s: &str) -> Option<(String, &str)> {
+        let mut out = String::new();
+        let mut chars = s.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '\\' => out.push(match chars.next()?.1 {
+                    'n' => '\n',
+                    other => other,
+                }),
+                '"' => return Some((out, &s[i + 1..])),
+                c => out.push(c),
+            }
+        }
+        None
+    }
+
+    fn screen_texts() -> Vec<String> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
+        let mut ids = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "slint") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                let mut rest = text.as_str();
+                while let Some(i) = rest.find("@tr(\"") {
+                    let (id, after) = quoted(&rest[i + 5..]).expect("kapanmayan @tr");
+                    ids.push(id);
+                    rest = after;
+                }
+            }
+        }
+        ids
+    }
+
+    fn english() -> HashMap<String, String> {
+        let po = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("lang/en/LC_MESSAGES/goodbyedpi3-ui.po");
+        let text = std::fs::read_to_string(po).unwrap();
+        let mut map = HashMap::new();
+        let mut id = None;
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("msgid \"") {
+                id = quoted(rest).map(|(s, _)| s);
+            } else if let Some(rest) = line.strip_prefix("msgstr \"") {
+                if let (Some(k), Some((v, _))) = (id.take(), quoted(rest)) {
+                    map.insert(k, v);
+                }
+            }
+        }
+        map
+    }
+
+    /// Ekrandaki her `@tr` metninin Ingilizcesi .po dosyasinda olmali (yoksa Ingilizce
+    /// arayuzde Turkce kalir).
+    #[test]
+    fn every_screen_text_has_english() {
+        let en = english();
+        let ids = screen_texts();
+        assert!(ids.len() > 50, "@tr metinleri bulunamadi ({})", ids.len());
+        let missing: Vec<&String> = ids.iter().filter(|i| en.get(*i).is_none_or(|v| v.is_empty())).collect();
+        assert!(missing.is_empty(), "Ingilizcesi eksik: {missing:?}");
+        let unused: Vec<&String> = en.keys().filter(|k| !k.is_empty() && !ids.contains(k)).collect();
+        assert!(unused.is_empty(), ".po dosyasinda artik kullanilmayan metinler: {unused:?}");
+    }
+
+    /// Ceviri programa gomulu ve calisirken degisir.
+    #[test]
+    fn english_is_bundled_and_switchable() {
+        let h = Harness::new(1.0);
+        assert_eq!(h.state().get_status_title(), "Kapalı");
+        slint::select_bundled_translation("en").unwrap();
+        assert_eq!(h.state().get_status_title(), "Off");
+        assert_eq!(h.state().get_update_text(), "Not checked yet");
+        slint::select_bundled_translation("").unwrap();
+        assert_eq!(h.state().get_status_title(), "Kapalı");
     }
 }
 

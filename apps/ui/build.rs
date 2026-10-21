@@ -30,7 +30,13 @@ const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?
 "#;
 
 fn main() {
-    slint_build::compile("ui/app.slint").expect("Slint derlemesi basarisiz");
+    // Ekran metinleri Turkce yazilir (`@tr`); Ingilizcesi lang/en altindaki .po dosyasindan
+    // programa gomulur. Baglam (bilesen adi) kullanilmaz: ayni metin her yerde ayni cevrilir.
+    let config = slint_build::CompilerConfiguration::new()
+        .with_bundled_translations("lang")
+        .with_default_translation_context(slint_build::DefaultTranslationContext::None);
+    slint_build::compile_with_config("ui/app.slint", config).expect("Slint derlemesi basarisiz");
+    println!("cargo:rerun-if-changed=lang");
     println!("cargo:rerun-if-changed=src/iconart.rs");
 
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());

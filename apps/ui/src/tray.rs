@@ -7,6 +7,7 @@
 use std::sync::{Mutex, OnceLock};
 
 use shared::ipc::{EngineState, Event, Request};
+use shared::t;
 use shared::update::UpdateState;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -58,14 +59,14 @@ fn notify_data(hwnd: HWND) -> NOTIFYICONDATAW {
 
 fn tooltip(v: &View) -> String {
     let state = if !v.connected {
-        "Motor hizmeti kapalı".to_owned()
+        t!("Motor hizmeti kapalı", "Engine service is off")
     } else {
         match v.state {
-            EngineState::On => format!("Korumalı · {} · {}", v.method, v.dns),
-            EngineState::Starting => "Bağlanıyor…".to_owned(),
-            EngineState::Paused => "Duraklatıldı".to_owned(),
-            EngineState::Error => format!("Bağlanamadı: {}", v.message.clone().unwrap_or_default()),
-            EngineState::Off => "Kapalı".to_owned(),
+            EngineState::On => t!("Korumalı · {} · {}", "Protected · {} · {}", v.method, v.dns),
+            EngineState::Starting => t!("Bağlanıyor…", "Connecting…"),
+            EngineState::Paused => t!("Duraklatıldı", "Paused"),
+            EngineState::Error => t!("Bağlanamadı: {}", "Couldn't connect: {}", v.message.clone().unwrap_or_default()),
+            EngineState::Off => t!("Kapalı", "Off"),
         }
     };
     let t = format!("DPI UI — {state}");
@@ -243,6 +244,7 @@ pub fn run() -> i32 {
             taskbar_created,
             check_update: false,
         }));
+        shared::i18n::set(crate::prefs::load().language);
         update_icon(true);
         ensure_autorun();
 
@@ -254,6 +256,7 @@ pub fn run() -> i32 {
                 let mut t = tray();
                 match inc {
                     Incoming::Connected(state) => {
+                        shared::i18n::set(state.config.language);
                         if installing(&state.update.state) {
                             PostMessageW(hwnd_val as HWND, WM_QUIT_ALL, 0, 0);
                             return;
@@ -278,6 +281,7 @@ pub fn run() -> i32 {
                         PostMessageW(hwnd_val as HWND, WM_QUIT_ALL, 0, 0);
                         return;
                     }
+                    Incoming::Event(Event::Config { config }) => shared::i18n::set(config.language),
                     Incoming::Event(_) => return,
                 }
             }

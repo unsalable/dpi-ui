@@ -7,11 +7,12 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
 
-const KNOWN: &[(&str, &str)] = &[
-    ("goodbyedpi.exe", "GoodbyeDPI (orijinal) çalışıyor"),
-    ("goodbyedpi-ui.exe", "GoodbyeDPI UI (eski sürüm) çalışıyor"),
-    ("winws.exe", "zapret (winws) çalışıyor"),
-    ("winws2.exe", "zapret2 (winws2) çalışıyor"),
+/// (surec, Turkce aciklama, Ingilizce aciklama)
+const KNOWN: &[(&str, &str, &str)] = &[
+    ("goodbyedpi.exe", "GoodbyeDPI (orijinal) çalışıyor", "GoodbyeDPI (original) is running"),
+    ("goodbyedpi-ui.exe", "GoodbyeDPI UI (eski sürüm) çalışıyor", "GoodbyeDPI UI (old version) is running"),
+    ("winws.exe", "zapret (winws) çalışıyor", "zapret (winws) is running"),
+    ("winws2.exe", "zapret2 (winws2) çalışıyor", "zapret2 (winws2) is running"),
 ];
 
 pub fn scan() -> Vec<Conflict> {
@@ -27,8 +28,9 @@ pub fn scan() -> Vec<Conflict> {
         while ok != 0 {
             let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
             let name = String::from_utf16_lossy(&entry.szExeFile[..len]).to_ascii_lowercase();
-            if let Some((_, desc)) = KNOWN.iter().find(|(n, _)| *n == name) {
-                found.push(Conflict { process: name, pid: entry.th32ProcessID, description: (*desc).to_owned() });
+            if let Some((_, tr, en)) = KNOWN.iter().find(|(n, _, _)| *n == name) {
+                let description = if shared::i18n::english() { en } else { tr };
+                found.push(Conflict { process: name, pid: entry.th32ProcessID, description: (*description).to_owned() });
             }
             ok = Process32NextW(snap, &mut entry);
         }

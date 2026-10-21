@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use engine::{DnsMode, Processor, Redirect};
 use shared::config::{ActiveDns, AppConfig};
 use shared::ipc::{Conflict, EngineState, EngineStatus, Event, LearnedHost, Request, Response, ServerMessage, StateSnapshot, StatsSnapshot};
+use shared::t;
 use shared::update::{UpdateState, UpdateStatus};
 
 use crate::engine_loop::{self, EngineMsg, RunningEngine};
@@ -50,6 +51,8 @@ impl Controller {
     pub fn new(exe_dir: PathBuf, as_service: bool) -> (Arc<Self>, Receiver<EngineMsg>) {
         let (tx, rx) = std::sync::mpsc::channel();
         let config = store::load_config();
+        // Arayuze giden mesajlar (hata, uyari, yontem adi) ayarli dilde olur.
+        shared::i18n::set(config.language);
         let learned = store::load_learned();
         let status = EngineStatus { method_name: config.active_method().name, dns_name: config.active_dns().display_name(), ..Default::default() };
         let ctrl = Arc::new_cyclic(|me| Self {
@@ -122,7 +125,12 @@ impl Controller {
                     return;
                 }
                 inner.status.message =
-                    (!ok).then(|| "Şifreli DNS'e ulaşılamıyor; geçici olarak sistem DNS'i kullanılıyor.".to_owned());
+                    (!ok).then(|| {
+                        t!(
+                            "Şifreli DNS'e ulaşılamıyor; geçici olarak sistem DNS'i kullanılıyor.",
+                            "Can't reach encrypted DNS; using the system DNS for now."
+                        )
+                    });
                 if ok {
                     info!("Şifreli DNS yeniden erişilebilir.");
                 } else {
@@ -371,9 +379,10 @@ impl Controller {
     fn set_config(&self, new: AppConfig) -> Result<(), String> {
         new.validate()?;
         let new = new.sanitized();
+        shared::i18n::set(new.language);
         let mut inner = self.inner.lock().unwrap();
         let old = std::mem::replace(&mut inner.config, new.clone());
-        store::save_config(&new).map_err(|e| format!("Ayarlar kaydedilemedi: {e}"))?;
+        store::save_config(&new).map_err(|e| t!("Ayarlar kaydedilemedi: {e}", "Couldn't save the settings: {e}"))?;
 
         if old.start_with_windows != new.start_with_windows && self.as_service {
             if let Err(e) = scm::set_auto_start(new.start_with_windows) {

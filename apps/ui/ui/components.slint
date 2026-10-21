@@ -168,7 +168,7 @@ export component BackButton inherits Rectangle {
     in property <string> text;
     callback clicked();
     accessible-role: button;
-    accessible-label: root.text == "" ? "Geri" : root.text;
+    accessible-label: root.text == "" ? @tr("Geri") : root.text;
     height: 32px;
     width: root.text == "" ? 36px : label.preferred-width + 34px;
     border-radius: 8px;

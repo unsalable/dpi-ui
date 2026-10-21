@@ -183,18 +183,18 @@ pub struct Manifest {
 impl Manifest {
     /// Imzasi dogrulanmis manifesti adaya karsi denetler.
     pub fn check(&self, expected: &Version) -> Result<(), String> {
-        let v = Version::parse(&self.version).ok_or("manifestteki sürüm okunamadı")?;
+        let v = Version::parse(&self.version).ok_or_else(|| crate::t!("manifestteki sürüm okunamadı", "couldn't read the version in the manifest"))?;
         if v != *expected {
-            return Err(format!("manifest sürümü ({v}) yayın etiketiyle ({expected}) eşleşmiyor"));
+            return Err(crate::t!("manifest sürümü ({v}) yayın etiketiyle ({expected}) eşleşmiyor", "manifest version ({v}) doesn't match the release tag ({expected})"));
         }
         if !self.file.eq_ignore_ascii_case(INSTALLER_NAME) && !self.file.eq_ignore_ascii_case(LEGACY_INSTALLER_NAME) {
-            return Err("manifest beklenmeyen bir dosyayı gösteriyor".into());
+            return Err(crate::t!("manifest beklenmeyen bir dosyayı gösteriyor", "the manifest points to an unexpected file"));
         }
         if self.sha256.len() != 64 || !self.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("manifestteki SHA-256 geçersiz".into());
+            return Err(crate::t!("manifestteki SHA-256 geçersiz", "invalid SHA-256 in the manifest"));
         }
         if self.size == 0 || self.size > MAX_INSTALLER {
-            return Err("manifestteki boyut geçersiz".into());
+            return Err(crate::t!("manifestteki boyut geçersiz", "invalid size in the manifest"));
         }
         Ok(())
     }

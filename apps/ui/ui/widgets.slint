@@ -545,7 +545,7 @@ export component ItemRow inherits RowBase {
             height: 30px;
             border-radius: 15px;
             accessible-role: button;
-            accessible-label: "Kaldır: " + root.name;
+            accessible-label: @tr("Kaldır: {}", root.name);
             background: x-ta.has-hover ? Theme.red.with-alpha(0.14) : transparent;
             Icon {
                 commands: Icons.line-xmark;

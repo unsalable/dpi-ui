@@ -1,0 +1,235 @@
+# DPI UI arayuzu: Ingilizce ceviri. Kaynak metinler Turkce (Slint @tr).
+# Yeni bir @tr metni eklenince buraya da eklenmeli; uitest eksik ceviriyi yakalar.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Ayarlar"
+msgstr "Settings"
+
+msgid "Simge durumuna küçült"
+msgstr "Minimize"
+
+msgid "Kapat"
+msgstr "Close"
+
+msgid "Geri"
+msgstr "Back"
+
+msgid "Yöntem"
+msgstr "Method"
+
+msgid "Bağlantı yöntemi"
+msgstr "Connection method"
+
+msgid "Siteler"
+msgstr "Sites"
+
+msgid "Akıllı liste"
+msgstr "Smart list"
+
+msgid "Tüm trafik"
+msgstr "All traffic"
+
+msgid "Genel"
+msgstr "General"
+
+msgid "Windows ile başlar"
+msgstr "Starts with Windows"
+
+msgid "Elle başlar"
+msgstr "Starts manually"
+
+msgid "Görünüm"
+msgstr "Appearance"
+
+msgid "Sistem"
+msgstr "System"
+
+msgid "Koyu"
+msgstr "Dark"
+
+msgid "Açık"
+msgstr "Light"
+
+msgid "Hakkında"
+msgstr "About"
+
+msgid "İnternet sağlayıcı"
+msgstr "Internet provider"
+
+msgid "YÖNTEM"
+msgstr "METHOD"
+
+msgid "Bir site açılmazsa sıradaki yöntemi dene."
+msgstr "If a site doesn't open, try the next method."
+
+msgid "Kapalı"
+msgstr "Off"
+
+msgid "Şifreli"
+msgstr "Encrypted"
+
+msgid "Yönlendirme"
+msgstr "Redirect"
+
+msgid "Sistem DNS'i kullanılır."
+msgstr "The system DNS is used."
+
+msgid "Sorgular şifreli gider; sağlayıcın göremez."
+msgstr "Queries are encrypted; your provider can't see them."
+
+msgid "Sorgular sunucunun farklı bir portuna yönlendirilir."
+msgstr "Queries are redirected to a different port on the server."
+
+msgid "SUNUCU"
+msgstr "SERVER"
+
+msgid "HIZ TESTİ"
+msgstr "SPEED TEST"
+
+msgid "Ölçülüyor…"
+msgstr "Measuring…"
+
+msgid "Hızları ölç"
+msgstr "Measure speeds"
+
+msgid "Yeniden ölç"
+msgstr "Measure again"
+
+msgid "Kullan"
+msgstr "Use"
+
+msgid "ÖZEL SUNUCU EKLE"
+msgstr "ADD CUSTOM SERVER"
+
+msgid "IP, IP:port ya da https:// / tls:// adresi."
+msgstr "IP, IP:port, or an https:// / tls:// address."
+
+msgid "Ad (örn. Ev DNS)"
+msgstr "Name (e.g. Home DNS)"
+
+msgid "Adres"
+msgstr "Address"
+
+msgid "Sunucu IP'si (yalnızca https / tls için)"
+msgstr "Server IP (only for https / tls)"
+
+msgid "Ekle ve kullan"
+msgstr "Add and use"
+
+msgid "ÖZEL SUNUCULAR"
+msgstr "CUSTOM SERVERS"
+
+msgid "GÜVENLİK"
+msgstr "SAFETY"
+
+msgid "Ulaşılamazsa sistem DNS'ine dön"
+msgstr "Fall back to system DNS if unreachable"
+
+msgid "VPN bağlıyken DNS'e dokunma"
+msgstr "Don't touch DNS while a VPN is connected"
+
+msgid "Ekle"
+msgstr "Add"
+
+msgid "Yalnızca engelli sitelere uygulanır."
+msgstr "Applied only to blocked sites."
+
+msgid "Tüm HTTPS bağlantılarına uygulanır."
+msgstr "Applied to all HTTPS connections."
+
+msgid "Açılmayan siteleri kendiliğinden ekle"
+msgstr "Automatically add sites that don't open"
+
+msgid "HAZIR LİSTE"
+msgstr "BUILT-IN LIST"
+
+msgid "KENDİ SİTELERİM"
+msgstr "MY SITES"
+
+msgid "ÖĞRENİLENLER"
+msgstr "LEARNED"
+
+msgid "Henüz öğrenilen site yok."
+msgstr "No sites learned yet."
+
+msgid "Tümünü unut"
+msgstr "Forget all"
+
+msgid "ASLA DOKUNMA"
+msgstr "NEVER TOUCH"
+
+msgid "banka.com.tr"
+msgstr "mybank.com"
+
+msgid "BAŞLANGIÇ"
+msgstr "STARTUP"
+
+msgid "Windows açılınca motoru başlat"
+msgstr "Start the engine when Windows starts"
+
+msgid "Açılışta otomatik bağlan"
+msgstr "Connect automatically on start"
+
+msgid "Oturum açılınca tepside başlat"
+msgstr "Start in the tray when I sign in"
+
+msgid "PENCERE"
+msgstr "WINDOW"
+
+msgid "Kapatınca tepside kal"
+msgstr "Stay in the tray when closed"
+
+msgid "GÜNCELLEMELER"
+msgstr "UPDATES"
+
+msgid "Güncellemeleri otomatik yükle"
+msgstr "Install updates automatically"
+
+msgid "SORUN GİDERME"
+msgstr "TROUBLESHOOTING"
+
+msgid "Günlüğü aç"
+msgstr "Open log"
+
+msgid "TEMA"
+msgstr "THEME"
+
+msgid "DİL"
+msgstr "LANGUAGE"
+
+msgid "Windows'un dilini kullanır"
+msgstr "Uses the Windows language"
+
+msgid "Sürüm {}"
+msgstr "Version {}"
+
+msgid "Güncellemeler"
+msgstr "Updates"
+
+msgid "Şimdi yükle"
+msgstr "Install now"
+
+msgid "Şimdi denetle"
+msgstr "Check now"
+
+msgid "MIT lisanslı açık kaynak yazılım."
+msgstr "Open-source software under the MIT license."
+
+msgid "Kaynak kodu"
+msgstr "Source code"
+
+msgid "Bağlanmak için dokun"
+msgstr "Tap to connect"
+
+msgid "Varsayılan"
+msgstr "Default"
+
+msgid "Henüz denetlenmedi"
+msgstr "Not checked yet"
+
+msgid "Kaldır: {}"
+msgstr "Remove: {}"

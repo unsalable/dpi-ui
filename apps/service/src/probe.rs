@@ -53,7 +53,7 @@ pub fn run(method_id: Option<&str>) -> i32 {
     cfg.scope.mode = engine::ScopeMode::All;
     let method = cfg.active_method();
     let dns = cfg.active_dns();
-    println!("Yöntem: {} ({})\nDNS: {}\n", method.name, method.config.summary(), dns.display_name());
+    println!("Yöntem: {} ({})\nDNS: {}\n", method.name, method.config.summary(false), dns.display_name());
 
     let conflicts = crate::conflicts::scan();
     for c in &conflicts {

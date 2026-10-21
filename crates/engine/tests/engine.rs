@@ -615,8 +615,10 @@ fn config_json_compat_with_v1() {
 
 #[test]
 fn summaries() {
-    assert_eq!(presets::DEFAULT.config().summary(), "sahte paket (oto TTL) · ters sıra bölme · QUIC engeli · Discord ses");
-    assert_eq!(presets::DISORDER.config().summary(), "ters sıra bölme +1 örtüşme · QUIC engeli · Discord ses");
+    assert_eq!(presets::DEFAULT.config().summary(false), "sahte paket (oto TTL) · ters sıra bölme · QUIC engeli · Discord ses");
+    assert_eq!(presets::DISORDER.config().summary(false), "ters sıra bölme +1 örtüşme · QUIC engeli · Discord ses");
+    assert_eq!(presets::DEFAULT.config().summary(true), "fake packet (auto TTL) · reverse-order split · QUIC block · Discord voice");
+    assert_eq!(presets::DISORDER.config().short_summary(true), "reverse-order split +1 overlap");
     assert_eq!(presets::isp("turktelekom").recommended().id, "disorder");
     assert_eq!(presets::isp("bilinmeyen").id, "general");
     for isp in presets::ISPS {

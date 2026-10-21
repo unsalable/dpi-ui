@@ -98,7 +98,7 @@ export component AppWindow inherits Window {
             x: root.depth == 2 && root.sub == 1 ? 0px : root.w;
             width: parent.width;
             height: parent.height;
-            back-text: root.sub-from-home ? "" : "Ayarlar";
+            back-text: root.sub-from-home ? "" : @tr("Ayarlar");
             animate x { duration: Motion.push; easing: Curves.push; }
             back => {
                 root.back();
@@ -109,7 +109,7 @@ export component AppWindow inherits Window {
             x: root.depth == 2 && root.sub == 2 ? 0px : root.w;
             width: parent.width;
             height: parent.height;
-            back-text: root.sub-from-home ? "" : "Ayarlar";
+            back-text: root.sub-from-home ? "" : @tr("Ayarlar");
             animate x { duration: Motion.push; easing: Curves.push; }
             back => {
                 root.back();
@@ -167,7 +167,7 @@ export component AppWindow inherits Window {
                 icon: Icons.line-minimize;
                 icon-size: 15px;
                 weight: 1.4px;
-                label: "Simge durumuna küçült";
+                label: @tr("Simge durumuna küçült");
                 clicked => {
                     root.minimize();
                 }
@@ -178,7 +178,7 @@ export component AppWindow inherits Window {
                 icon-size: 15px;
                 weight: 1.4px;
                 danger: true;
-                label: "Kapat";
+                label: @tr("Kapat");
                 clicked => {
                     root.close-window();
                 }

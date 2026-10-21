@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use ring::signature::{ED25519, UnparsedPublicKey};
 use serde::{Deserialize, Serialize};
 use shared::config::{UpdateChannel, UpdateMode};
+use shared::t;
 use shared::update::{self, Candidate, Manifest, Release, UpdateState, Version};
 
 use crate::controller::{Controller, now_ms};
@@ -127,7 +128,7 @@ fn run_check(ctrl: &Arc<Controller>, forced: bool) {
     ctrl.set_update(UpdateState::Checking, false);
     let result = match Version::parse(shared::VERSION) {
         Some(current) => check_and_download(&current, config.update_channel == UpdateChannel::Beta, &mut |s| ctrl.set_update(s, false)),
-        None => Err("uygulama sürümü okunamadı".into()),
+        None => Err(t!("uygulama sürümü okunamadı", "couldn't read the app version")),
     };
     let state = match result {
         Ok(state) => state,
@@ -148,7 +149,7 @@ fn run_check(ctrl: &Arc<Controller>, forced: bool) {
 /// planda baslar.
 pub fn request_install(ctrl: &Arc<Controller>) -> Result<(), String> {
     if !matches!(ctrl.update_status().state, UpdateState::Ready { .. }) {
-        return Err("Kurulacak bir güncelleme yok.".into());
+        return Err(t!("Kurulacak bir güncelleme yok.", "There's no update to install."));
     }
     let weak: Weak<Controller> = Arc::downgrade(ctrl);
     std::thread::Builder::new()
@@ -160,7 +161,7 @@ pub fn request_install(ctrl: &Arc<Controller>) -> Result<(), String> {
             }
         })
         .map(drop)
-        .map_err(|e| format!("Kurulum başlatılamadı: {e}"))
+        .map_err(|e| t!("Kurulum başlatılamadı: {e}", "Couldn't start the installation: {e}"))
 }
 
 /// Dogrulanmis paketi sessizce kurar. `by_user` degilse daha once kurulamamis surum yeniden
@@ -185,7 +186,12 @@ pub fn install(ctrl: &Arc<Controller>, by_user: bool) -> Result<(), String> {
     if !std::fs::read(&installer).is_ok_and(|d| sha256(&d).eq_ignore_ascii_case(expected)) {
         let _ = std::fs::remove_file(&installer);
         warn!("Güncelleme paketi doğrulanamadı; silindi.");
-        ctrl.set_update(UpdateState::Failed { message: "Güncelleme paketi doğrulanamadı; yeniden indirilecek.".into() }, false);
+        ctrl.set_update(
+            UpdateState::Failed {
+                message: t!("Güncelleme paketi doğrulanamadı; yeniden indirilecek.", "The update package couldn't be verified; it will be downloaded again."),
+            },
+            false,
+        );
         updater.installing.store(false, Ordering::SeqCst);
         return Err("paket doğrulanamadı".into());
     }
@@ -293,7 +299,7 @@ fn clear_failed() {
 pub fn check_and_download(current: &Version, beta: bool, progress: &mut dyn FnMut(UpdateState)) -> Result<UpdateState, String> {
     let current = current.clone();
     let json = https::get(update::RELEASES_API, "application/vnd.github+json", 4 * 1024 * 1024, &mut |_, _| {})?;
-    let releases: Vec<Release> = serde_json::from_slice(&json).map_err(|e| format!("sürüm listesi okunamadı: {e}"))?;
+    let releases: Vec<Release> = serde_json::from_slice(&json).map_err(|e| t!("sürüm listesi okunamadı: {e}", "couldn't read the release list: {e}"))?;
     cleanup_installed(&current);
     let Some(candidate) = update::pick(&current, &releases, beta) else {
         return Ok(UpdateState::UpToDate);
@@ -320,11 +326,11 @@ pub fn check_and_download(current: &Version, beta: bool, progress: &mut dyn FnMu
         }
     })?;
     if data.len() as u64 != manifest.size || sha256(&data) != manifest.sha256 {
-        return Err("indirilen paket imzalı manifestle eşleşmiyor; silindi".into());
+        return Err(t!("indirilen paket imzalı manifestle eşleşmiyor; silindi", "the downloaded package doesn't match the signed manifest; deleted"));
     }
     let partial = installer.with_extension("partial");
-    std::fs::write(&partial, &data).map_err(|e| format!("paket yazılamadı: {e}"))?;
-    std::fs::rename(&partial, &installer).map_err(|e| format!("paket yerine konamadı: {e}"))?;
+    std::fs::write(&partial, &data).map_err(|e| t!("paket yazılamadı: {e}", "couldn't write the package: {e}"))?;
+    std::fs::rename(&partial, &installer).map_err(|e| t!("paket yerine konamadı: {e}", "couldn't move the package into place: {e}"))?;
     if !crate::store::secure_update_file(&installer) {
         warn!("Güncelleme paketinin izinleri ayarlanamadı.");
     }
@@ -345,9 +351,9 @@ fn fetch_manifest(c: &Candidate) -> Result<Manifest, String> {
 }
 
 pub fn verify_manifest(json: &[u8], sig_text: &[u8], key: &[u8; 32], expected: &Version) -> Result<Manifest, String> {
-    let sig = update::from_hex(&String::from_utf8_lossy(sig_text)).ok_or("imza dosyası bozuk")?;
-    UnparsedPublicKey::new(&ED25519, key).verify(json, &sig).map_err(|_| "güncelleme imzası geçersiz")?;
-    let m: Manifest = serde_json::from_slice(json).map_err(|e| format!("manifest okunamadı: {e}"))?;
+    let sig = update::from_hex(&String::from_utf8_lossy(sig_text)).ok_or_else(|| t!("imza dosyası bozuk", "the signature file is corrupt"))?;
+    UnparsedPublicKey::new(&ED25519, key).verify(json, &sig).map_err(|_| t!("güncelleme imzası geçersiz", "invalid update signature"))?;
+    let m: Manifest = serde_json::from_slice(json).map_err(|e| t!("manifest okunamadı: {e}", "couldn't read the manifest: {e}"))?;
     m.check(expected)?;
     Ok(m)
 }

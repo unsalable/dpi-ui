@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use engine::{Event, IpPacket, ItemKind, Output, Processor, Verdict};
 use shared::ipc::StatsSnapshot;
+use shared::t;
 use windivert::{Address, Handle, Layer, OsError, Shutdown};
 
 use crate::{dns, error, warn};
@@ -71,11 +72,11 @@ impl RunningEngine {
     }
 }
 
-/// Motoru acar. Hata metni kullaniciya gosterilecek Turkce aciklamadir.
+/// Motoru acar. Hata metni kullaniciya gosterilecek aciklamadir (secili dilde).
 pub fn start(dir: &Path, mut processor: Processor, dns_setup: Option<DnsSetup>, tx: Sender<EngineMsg>) -> Result<RunningEngine, String> {
-    windivert::load(dir).map_err(|e| format!("WinDivert yüklenemedi: {e}. Kurulum klasörü eksik olabilir."))?;
+    windivert::load(dir).map_err(|e| t!("WinDivert yüklenemedi: {e}. Kurulum klasörü eksik olabilir.", "Couldn't load WinDivert: {e}. The install folder may be incomplete."))?;
     let filter = processor.build_filter();
-    windivert::compile_filter(&filter, Layer::Network).map_err(|e| format!("Filtre oluşturulamadı: {e}"))?;
+    windivert::compile_filter(&filter, Layer::Network).map_err(|e| t!("Filtre oluşturulamadı: {e}", "Couldn't build the filter: {e}"))?;
 
     let handle = Arc::new(Handle::open(&filter, Layer::Network, 0, 0).map_err(describe_open_error)?);
     // Paketler biz geri gonderene kadar bekler; kuyruk varsayilanlari (4096 paket, 2 sn) yeterli.
@@ -116,7 +117,7 @@ pub fn start(dir: &Path, mut processor: Processor, dns_setup: Option<DnsSetup>, 
                     }
                 }
             })
-            .map_err(|e| format!("Motor iş parçacığı başlatılamadı: {e}"))?
+            .map_err(|e| t!("Motor iş parçacığı başlatılamadı: {e}", "Couldn't start the engine thread: {e}"))?
     };
     Ok(RunningEngine { handle, stop, thread: Some(thread), stats, dns_stats })
 }
@@ -155,7 +156,7 @@ fn run(
                 }
                 consecutive_errors += 1;
                 if consecutive_errors > 2000 {
-                    return Err(format!("WinDivert okuma hatası sürüyor ({e})."));
+                    return Err(t!("WinDivert okuma hatası sürüyor ({e}).", "WinDivert keeps failing to read ({e})."));
                 }
                 if consecutive_errors > 16 {
                     std::thread::sleep(Duration::from_millis(10));
@@ -183,7 +184,10 @@ fn run(
                     if panics > MAX_PANICS_PER_MINUTE {
                         // Paketi yine de birak; sonra dur (tutamac kapaninca trafik normale doner).
                         let _ = handle.send(pkt, addr);
-                        return Err("Motor beklenmedik paketlerde art arda hata verdi; güvenlik için durduruldu.".into());
+                        return Err(t!(
+                            "Motor beklenmedik paketlerde art arda hata verdi; güvenlik için durduruldu.",
+                            "The engine failed repeatedly on unexpected packets and was stopped for safety."
+                        ));
                     }
                     warn!("Bir paket işlenirken hata oluştu; paket olduğu gibi geçirildi.");
                     out.clear();
@@ -281,19 +285,28 @@ fn raise_priority() {
 /// WinDivertOpen hatalarini kullanicinin anlayacagi dile cevirir.
 pub fn describe_open_error(e: OsError) -> String {
     match e.0 {
-        OsError::ACCESS_DENIED => "Erişim reddedildi. Motor yönetici yetkisiyle çalışmalı (servis kurulu mu?).".into(),
-        OsError::FILE_NOT_FOUND => "WinDivert sürücüsü bulunamadı (WinDivert64.sys eksik olabilir).".into(),
-        OsError::INVALID_IMAGE_HASH => {
-            "WinDivert sürücüsü imza doğrulamasından geçemedi. Güvenlik yazılımı dosyayı değiştirmiş olabilir.".into()
-        }
-        OsError::DRIVER_BLOCKED => {
-            "WinDivert sürücüsü engellendi. Antivirüs (özellikle Kaspersky) WinDivert'i engelliyor olabilir.".into()
-        }
-        OsError::DRIVER_FAILED_PRIOR_UNLOAD => {
-            "Başka bir programın WinDivert sürücüsü kapanırken takıldı. Bilgisayarı yeniden başlatıp tekrar dene.".into()
-        }
-        OsError::SERVICE_DOES_NOT_EXIST => "WinDivert sürücü hizmeti kurulamadı.".into(),
-        code => format!("WinDivert açılamadı (Windows hata kodu {code})."),
+        OsError::ACCESS_DENIED => t!(
+            "Erişim reddedildi. Motor yönetici yetkisiyle çalışmalı (servis kurulu mu?).",
+            "Access denied. The engine must run with administrator rights (is the service installed?)."
+        ),
+        OsError::FILE_NOT_FOUND => t!(
+            "WinDivert sürücüsü bulunamadı (WinDivert64.sys eksik olabilir).",
+            "The WinDivert driver wasn't found (WinDivert64.sys may be missing)."
+        ),
+        OsError::INVALID_IMAGE_HASH => t!(
+            "WinDivert sürücüsü imza doğrulamasından geçemedi. Güvenlik yazılımı dosyayı değiştirmiş olabilir.",
+            "The WinDivert driver failed signature verification. Security software may have modified the file."
+        ),
+        OsError::DRIVER_BLOCKED => t!(
+            "WinDivert sürücüsü engellendi. Antivirüs (özellikle Kaspersky) WinDivert'i engelliyor olabilir.",
+            "The WinDivert driver was blocked. An antivirus (especially Kaspersky) may be blocking WinDivert."
+        ),
+        OsError::DRIVER_FAILED_PRIOR_UNLOAD => t!(
+            "Başka bir programın WinDivert sürücüsü kapanırken takıldı. Bilgisayarı yeniden başlatıp tekrar dene.",
+            "Another program's WinDivert driver got stuck while closing. Restart the computer and try again."
+        ),
+        OsError::SERVICE_DOES_NOT_EXIST => t!("WinDivert sürücü hizmeti kurulamadı.", "Couldn't install the WinDivert driver service."),
+        code => t!("WinDivert açılamadı (Windows hata kodu {code}).", "Couldn't open WinDivert (Windows error code {code})."),
     }
 }
 

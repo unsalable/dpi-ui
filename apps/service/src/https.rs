@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
+use shared::t;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
@@ -36,17 +37,17 @@ struct Url {
 }
 
 fn parse(url: &str) -> Result<Url, String> {
-    let rest = url.strip_prefix("https://").ok_or("yalnızca https adreslerine izin var")?;
+    let rest = url.strip_prefix("https://").ok_or_else(|| t!("yalnızca https adreslerine izin var", "only https addresses are allowed"))?;
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, "/"),
     };
     let (host, port) = match authority.rsplit_once(':') {
-        Some((h, p)) => (h, p.parse().map_err(|_| "geçersiz port")?),
+        Some((h, p)) => (h, p.parse().map_err(|_| t!("geçersiz port", "invalid port"))?),
         None => (authority, 443),
     };
     if !shared::update::allowed_host(host) {
-        return Err(format!("izin verilmeyen sunucu: {host}"));
+        return Err(t!("izin verilmeyen sunucu: {host}", "server not allowed: {host}"));
     }
     Ok(Url { host: host.to_owned(), port, path: path.to_owned() })
 }
@@ -60,7 +61,7 @@ pub fn get(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Opti
             Fetched::Redirect(to) => current = to,
         }
     }
-    Err("çok fazla yönlendirme".into())
+    Err(t!("çok fazla yönlendirme", "too many redirects"))
 }
 
 enum Fetched {
@@ -72,13 +73,13 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
     let u = parse(url)?;
     let addr = (u.host.as_str(), u.port)
         .to_socket_addrs()
-        .map_err(|e| format!("{} çözümlenemedi: {e}", u.host))?
+        .map_err(|e| t!("{} çözümlenemedi: {e}", "couldn't resolve {}: {e}", u.host))?
         .next()
-        .ok_or_else(|| format!("{} için adres yok", u.host))?;
-    let tcp = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(|e| format!("{} bağlantısı: {e}", u.host))?;
+        .ok_or_else(|| t!("{} için adres yok", "no address for {}", u.host))?;
+    let tcp = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(|e| t!("{} bağlantısı: {e}", "connection to {}: {e}", u.host))?;
     tcp.set_read_timeout(Some(IO_TIMEOUT)).ok();
     tcp.set_write_timeout(Some(IO_TIMEOUT)).ok();
-    let name = ServerName::try_from(u.host.clone()).map_err(|_| "geçersiz sunucu adı")?;
+    let name = ServerName::try_from(u.host.clone()).map_err(|_| t!("geçersiz sunucu adı", "invalid server name"))?;
     let conn = ClientConnection::new(tls()?, name).map_err(|e| e.to_string())?;
     let mut s = StreamOwned::new(conn, tcp);
 
@@ -95,17 +96,17 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
         if head.len() >= MAX_HEADER {
-            return Err("yanıt başlığı çok büyük".into());
+            return Err(t!("yanıt başlığı çok büyük", "response header too large"));
         }
         match s.read(&mut byte) {
-            Ok(0) => return Err("bağlantı erken kapandı".into()),
+            Ok(0) => return Err(t!("bağlantı erken kapandı", "the connection closed early")),
             Ok(_) => head.push(byte[0]),
             Err(e) => return Err(e.to_string()),
         }
     }
     let head = String::from_utf8_lossy(&head);
     let mut lines = head.split("\r\n");
-    let status: u16 = lines.next().and_then(|l| l.split_whitespace().nth(1)).and_then(|c| c.parse().ok()).ok_or("geçersiz HTTP yanıtı")?;
+    let status: u16 = lines.next().and_then(|l| l.split_whitespace().nth(1)).and_then(|c| c.parse().ok()).ok_or_else(|| t!("geçersiz HTTP yanıtı", "invalid HTTP response"))?;
     let header = |name: &str| {
         head.split("\r\n").skip(1).find_map(|l| {
             let (k, v) = l.split_once(':')?;
@@ -113,18 +114,18 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
         })
     };
     if matches!(status, 301 | 302 | 303 | 307 | 308) {
-        let to = header("location").ok_or("yönlendirme adresi yok")?;
+        let to = header("location").ok_or_else(|| t!("yönlendirme adresi yok", "no redirect address"))?;
         return Ok(Fetched::Redirect(to));
     }
     if status != 200 {
-        return Err(format!("sunucu {status} döndü"));
+        return Err(t!("sunucu {status} döndü", "the server returned {status}"));
     }
 
     // Govde: chunked, Content-Length ya da baglanti kapanana kadar.
     let chunked = header("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked"));
     let length: Option<u64> = header("content-length").and_then(|v| v.parse().ok());
     if length.is_some_and(|l| l > max) {
-        return Err("dosya beklenenden büyük".into());
+        return Err(t!("dosya beklenenden büyük", "the file is larger than expected"));
     }
     let mut body = Vec::with_capacity(length.unwrap_or(64 * 1024).min(max) as usize);
     let mut buf = vec![0u8; 64 * 1024];
@@ -136,7 +137,7 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
                 Ok(n) => {
                     raw.extend_from_slice(&buf[..n]);
                     if raw.len() as u64 > max + 64 * 1024 {
-                        return Err("dosya beklenenden büyük".into());
+                        return Err(t!("dosya beklenenden büyük", "the file is larger than expected"));
                     }
                 }
                 // TLS kapanis bildirimi olmadan biten sunucular: govde zaten tam olabilir.
@@ -156,7 +157,7 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
                 Ok(n) => {
                     body.extend_from_slice(&buf[..n]);
                     if body.len() as u64 > max {
-                        return Err("dosya beklenenden büyük".into());
+                        return Err(t!("dosya beklenenden büyük", "the file is larger than expected"));
                     }
                     progress(body.len() as u64, length);
                 }
@@ -166,7 +167,7 @@ fn fetch(url: &str, accept: &str, max: u64, progress: &mut dyn FnMut(u64, Option
         }
         if let Some(l) = length {
             if body.len() as u64 != l {
-                return Err("indirme yarıda kaldı".into());
+                return Err(t!("indirme yarıda kaldı", "the download was cut off"));
             }
         }
     }
@@ -177,15 +178,15 @@ fn dechunk(raw: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
     loop {
-        let end = raw[i..].windows(2).position(|w| w == b"\r\n").ok_or("bozuk parçalı yanıt")? + i;
+        let end = raw[i..].windows(2).position(|w| w == b"\r\n").ok_or_else(|| t!("bozuk parçalı yanıt", "corrupt chunked response"))? + i;
         let size_text = String::from_utf8_lossy(&raw[i..end]);
-        let size = usize::from_str_radix(size_text.split(';').next().unwrap_or("").trim(), 16).map_err(|_| "bozuk parça boyutu")?;
+        let size = usize::from_str_radix(size_text.split(';').next().unwrap_or("").trim(), 16).map_err(|_| t!("bozuk parça boyutu", "corrupt chunk size"))?;
         i = end + 2;
         if size == 0 {
             return Ok(out);
         }
         if i + size > raw.len() {
-            return Err("parçalı yanıt yarıda kaldı".into());
+            return Err(t!("parçalı yanıt yarıda kaldı", "the chunked response was cut off"));
         }
         out.extend_from_slice(&raw[i..i + size]);
         i += size + 2;

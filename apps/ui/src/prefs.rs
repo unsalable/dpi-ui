@@ -1,6 +1,7 @@
 //! Kullaniciya ozel arayuz tercihleri: `%AppData%\GoodbyeDPI3\ui.json`.
 
 use serde::{Deserialize, Serialize};
+use shared::i18n::Language;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -13,11 +14,13 @@ pub struct Prefs {
     pub v1_checked: bool,
     /// Ilk acilista oturum acilisi kaydi yapildi mi?
     pub autorun_initialized: bool,
+    /// Son bilinen dil (asil secim servisin ayarinda; pencere ve tepsi acilirken bunu kullanir).
+    pub language: Language,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Self { theme: 0, close_to_tray: true, tray_at_login: true, v1_checked: false, autorun_initialized: false }
+        Self { theme: 0, close_to_tray: true, tray_at_login: true, v1_checked: false, autorun_initialized: false, language: Language::System }
     }
 }
 

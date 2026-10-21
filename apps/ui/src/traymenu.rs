@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 
 use shared::ipc::EngineState;
+use shared::t;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateCompatibleDC,
@@ -115,23 +116,23 @@ fn is_on(v: &View) -> bool {
 
 fn status(v: &View, p: &Palette) -> (String, Rgb) {
     if !v.connected {
-        return ("Motor hizmeti kapalı".into(), p.secondary);
+        return (t!("Motor hizmeti kapalı", "Engine service is off"), p.secondary);
     }
     match v.state {
-        EngineState::On => (format!("Korumalı · {}", v.method), p.green),
-        EngineState::Starting => ("Bağlanıyor…".into(), p.blue),
-        EngineState::Paused => ("Duraklatıldı".into(), p.secondary),
-        EngineState::Error => ("Bağlanamadı".into(), p.red),
-        EngineState::Off => ("Kapalı".into(), p.secondary),
+        EngineState::On => (t!("Korumalı · {}", "Protected · {}", v.method), p.green),
+        EngineState::Starting => (t!("Bağlanıyor…", "Connecting…"), p.blue),
+        EngineState::Paused => (t!("Duraklatıldı", "Paused"), p.secondary),
+        EngineState::Error => (t!("Bağlanamadı", "Couldn't connect"), p.red),
+        EngineState::Off => (t!("Kapalı", "Off"), p.secondary),
     }
 }
 
-fn row_label(i: usize, v: &View) -> &'static str {
+fn row_label(i: usize, v: &View) -> String {
     match i {
-        0 if !v.connected => "Motor hizmetini başlat",
-        0 => "Bağlantı",
-        1 => "Uygulamayı aç",
-        _ => "Çık",
+        0 if !v.connected => t!("Motor hizmetini başlat", "Start engine service"),
+        0 => t!("Bağlantı", "Connection"),
+        1 => t!("Uygulamayı aç", "Open app"),
+        _ => t!("Çık", "Quit"),
     }
 }
 
@@ -347,7 +348,7 @@ impl Surface {
         text(self.dc, f.small, s, 56.0, PAD + 29.0, W - 70.0, 18.0, &st, st_c);
         for i in 0..3 {
             let color = if i == 0 && !v.connected { p.blue } else { p.label };
-            text(self.dc, f.body, s, PAD + 12.0, ROWS[i], W - 100.0, ROW_H, row_label(i, v), color);
+            text(self.dc, f.body, s, PAD + 12.0, ROWS[i], W - 100.0, ROW_H, &row_label(i, v), color);
         }
         unsafe { GdiFlush() };
     }

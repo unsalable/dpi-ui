@@ -29,6 +29,8 @@ use windows_service::service_control_handler::{self, ServiceControlHandlerResult
 use windows_service::{define_windows_service, service_dispatcher};
 
 use controller::Controller;
+use shared::config::AppConfig;
+use shared::i18n::Language;
 
 struct App {
     ctrl: Arc<Controller>,
@@ -142,6 +144,16 @@ fn main() {
         run_console();
         0
     } else if has("--install") {
+        // Ilk kurulum: uygulamanin dili kurulumda secilen dil olur (--lang tr|en). Ayar dosyasi
+        // zaten varsa (guncelleme) kullanicinin secimine dokunulmaz.
+        let lang = args.iter().position(|a| a == "--lang").and_then(|i| args.get(i + 1));
+        if let Some(lang) = lang.filter(|_| !shared::paths::config_file().exists()) {
+            store::ensure_data_dir();
+            let language = if lang.eq_ignore_ascii_case("en") { Language::English } else { Language::Turkish };
+            let _ = store::save_config(&AppConfig { language, ..AppConfig::default() });
+        }
+        // Hizmetin Windows'taki adi ve aciklamasi ayarli dilde.
+        shared::i18n::set(store::load_config().language);
         let exe = std::env::current_exe().unwrap_or_default();
         match scm::install(&exe, !has("--manual")) {
             Ok(()) => {

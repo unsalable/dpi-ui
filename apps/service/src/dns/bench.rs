@@ -80,7 +80,7 @@ pub fn run_all() -> Vec<BenchResult> {
         .filter(|p| p.supports_doh())
         .map(|p| {
             let bootstrap: Vec<std::net::IpAddr> = p.bootstrap_v4.iter().chain(p.bootstrap_v6).filter_map(|s| s.parse().ok()).collect();
-            let (id, name, url) = (p.id, p.name, p.doh_url);
+            let (id, name, url) = (p.id, p.label(shared::i18n::english()), p.doh_url);
             std::thread::Builder::new().stack_size(256 * 1024).spawn(move || run_one(id, name, url, &bootstrap)).unwrap()
         })
         .collect();

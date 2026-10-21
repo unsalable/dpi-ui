@@ -125,14 +125,14 @@ pub fn start_service() -> Result<(), String> {
     unsafe {
         let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT);
         if scm.is_null() {
-            return Err("Hizmet yöneticisine bağlanılamadı.".into());
+            return Err(shared::t!("Hizmet yöneticisine bağlanılamadı.", "Couldn't connect to the service manager."));
         }
         let svc = OpenServiceW(scm, wide(shared::SERVICE_NAME).as_ptr(), SERVICE_START);
         let result = if svc.is_null() {
-            Err("Motor hizmeti kurulu değil. Uygulamayı yeniden kurmayı dene.".into())
+            Err(shared::t!("Motor hizmeti kurulu değil. Uygulamayı yeniden kurmayı dene.", "The engine service isn't installed. Try reinstalling the app."))
         } else if StartServiceW(svc, 0, std::ptr::null()) == 0 && GetLastError() != 1056 {
             // 1056 = zaten calisiyor.
-            Err(format!("Motor hizmeti başlatılamadı (hata {}).", GetLastError()))
+            Err(shared::t!("Motor hizmeti başlatılamadı (hata {}).", "Couldn't start the engine service (error {}).", GetLastError()))
         } else {
             Ok(())
         };

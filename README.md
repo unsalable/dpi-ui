@@ -16,6 +16,8 @@ sıfırdan, Rust ile yazıldı; kendi DPI motorunu kullanır.
   Kablonet ve mobil hatlar), özel DNS, istisna listesi, eski sürüm ayarlarını otomatik aktarma.
 - **Otomatik güncelleme:** yeni sürümler bu depodaki [Releases](https://github.com/unsalable/dpi-ui/releases)
   sayfasından gelir; paket yalnızca imzası doğrulanırsa kurulur.
+- **Türkçe ve İngilizce:** varsayılan olarak Windows'un dilini kullanır; Ayarlar → Görünüm'den
+  değiştirilebilir. *Available in English: Settings → Appearance → Language.*
 
 ## Kurulum
 

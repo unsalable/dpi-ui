@@ -38,7 +38,7 @@ export component HomePage inherits Page {
                 icon: Icons.line-gear;
                 icon-size: 19px;
                 weight: 1.5px;
-                label: "Ayarlar";
+                label: @tr("Ayarlar");
                 clicked => {
                     root.open-settings();
                 }
@@ -142,7 +142,7 @@ export component HomePage inherits Page {
                     first: true;
                     icon: Icons.fill-bolt;
                     tint: Theme.orange;
-                    title: "Yöntem";
+                    title: @tr("Yöntem");
                     value: AppState.method-name;
                     clicked => {
                         root.open-method();
@@ -188,7 +188,7 @@ export component SettingsMenu inherits Page {
             HorizontalLayout {
                 padding-left: 4px;
                 Text {
-                    text: "Ayarlar";
+                    text: @tr("Ayarlar");
                     color: Theme.label;
                     font-family: Type.display;
                     font-size: Type.large-title;
@@ -201,7 +201,7 @@ export component SettingsMenu inherits Page {
                     first: true;
                     icon: Icons.fill-bolt;
                     tint: Theme.orange;
-                    title: "Bağlantı yöntemi";
+                    title: @tr("Bağlantı yöntemi");
                     value: AppState.method-name;
                     clicked => {
                         root.open(1);
@@ -224,8 +224,8 @@ export component SettingsMenu inherits Page {
                     icon: Icons.line-list;
                     filled: false;
                     tint: Theme.teal;
-                    title: "Siteler";
-                    value: AppState.scope-mode == 0 ? "Akıllı liste" : "Tüm trafik";
+                    title: @tr("Siteler");
+                    value: AppState.scope-mode == 0 ? @tr("Akıllı liste") : @tr("Tüm trafik");
                     clicked => {
                         root.open(3);
                     }
@@ -237,8 +237,8 @@ export component SettingsMenu inherits Page {
                     first: true;
                     icon: Icons.fill-gear;
                     tint: Theme.gray;
-                    title: "Genel";
-                    value: AppState.start-with-windows ? "Windows ile başlar" : "Elle başlar";
+                    title: @tr("Genel");
+                    value: AppState.start-with-windows ? @tr("Windows ile başlar") : @tr("Elle başlar");
                     clicked => {
                         root.open(4);
                     }
@@ -248,8 +248,8 @@ export component SettingsMenu inherits Page {
                     last: true;
                     icon: Icons.fill-appearance;
                     tint: Theme.indigo;
-                    title: "Görünüm";
-                    value: AppState.theme-index == 0 ? "Sistem" : AppState.theme-index == 1 ? "Koyu" : "Açık";
+                    title: @tr("Görünüm");
+                    value: AppState.theme-index == 0 ? @tr("Sistem") : AppState.theme-index == 1 ? @tr("Koyu") : @tr("Açık");
                     clicked => {
                         root.open(5);
                     }
@@ -262,7 +262,7 @@ export component SettingsMenu inherits Page {
                     last: true;
                     icon: Icons.fill-info;
                     tint: Theme.gray;
-                    title: "Hakkında";
+                    title: @tr("Hakkında");
                     value: AppState.version;
                     clicked => {
                         root.open(6);
@@ -276,7 +276,7 @@ export component SettingsMenu inherits Page {
 // Alt sayfa iskeleti: gezinme cubugu + kaydirilabilir icerik.
 component SubPage inherits Page {
     in property <string> title;
-    in property <string> back-text: "Ayarlar";
+    in property <string> back-text: @tr("Ayarlar");
     callback back();
 
     VerticalLayout {
@@ -307,13 +307,13 @@ component SubPage inherits Page {
 // ================================================================== yontem
 
 export component MethodPage inherits SubPage {
-    title: "Bağlantı yöntemi";
+    title: @tr("Bağlantı yöntemi");
 
     Group {
         PickerRow {
             first: true;
             last: true;
-            title: "İnternet sağlayıcı";
+            title: @tr("İnternet sağlayıcı");
             options: AppState.isp-names;
             current-index: AppState.isp-index;
             selected(index) => {
@@ -323,8 +323,8 @@ export component MethodPage inherits SubPage {
     }
 
     Group {
-        header: "YÖNTEM";
-        footer: "Bir site açılmazsa sıradaki yöntemi dene.";
+        header: @tr("YÖNTEM");
+        footer: @tr("Bir site açılmazsa sıradaki yöntemi dene.");
         for option[index] in AppState.methods: CheckRow {
             first: index == 0;
             last: index == AppState.methods.length - 1;
@@ -351,7 +351,7 @@ export component DnsPage inherits SubPage {
     VerticalLayout {
         spacing: 7px;
         Segmented {
-            options: ["Kapalı", "Şifreli", "Yönlendirme"];
+            options: [@tr("Kapalı"), @tr("Şifreli"), @tr("Yönlendirme")];
             current-index: AppState.dns-mode;
             selected(index) => {
                 AppState.set-dns-mode(index);
@@ -363,10 +363,10 @@ export component DnsPage inherits SubPage {
             padding-right: 16px;
             Text {
                 text: AppState.dns-mode == 0
-                    ? "Sistem DNS'i kullanılır."
+                    ? @tr("Sistem DNS'i kullanılır.")
                     : AppState.dns-mode == 1
-                    ? "Sorgular şifreli gider; sağlayıcın göremez."
-                    : "Sorgular sunucunun farklı bir portuna yönlendirilir.";
+                    ? @tr("Sorgular şifreli gider; sağlayıcın göremez.")
+                    : @tr("Sorgular sunucunun farklı bir portuna yönlendirilir.");
                 color: Theme.secondary;
                 font-size: Type.footnote;
                 wrap: word-wrap;
@@ -375,7 +375,7 @@ export component DnsPage inherits SubPage {
     }
 
     if AppState.dns-mode != 0: Group {
-        header: "SUNUCU";
+        header: @tr("SUNUCU");
         for option[index] in AppState.dns-providers: CheckRow {
             first: index == 0;
             last: index == AppState.dns-providers.length - 1;
@@ -389,11 +389,11 @@ export component DnsPage inherits SubPage {
     }
 
     if AppState.dns-mode == 1: Group {
-        header: "HIZ TESTİ";
+        header: @tr("HIZ TESTİ");
         ActionRow {
             first: true;
             last: AppState.bench.length == 0;
-            text: AppState.bench-running ? "Ölçülüyor…" : AppState.bench.length == 0 ? "Hızları ölç" : "Yeniden ölç";
+            text: AppState.bench-running ? @tr("Ölçülüyor…") : AppState.bench.length == 0 ? @tr("Hızları ölç") : @tr("Yeniden ölç");
             busy: AppState.bench-running;
             activated => {
                 AppState.run-bench();
@@ -450,7 +450,7 @@ export component DnsPage inherits SubPage {
                         border-radius: 7px;
                         background: use-ta.has-hover ? Theme.fill.with-alpha(0.6) : transparent;
                         use-label := Text {
-                            text: "Kullan";
+                            text: @tr("Kullan");
                             color: item.ok ? Theme.blue : Theme.tertiary;
                             font-size: Type.callout;
                             font-weight: 500;
@@ -480,12 +480,12 @@ export component DnsPage inherits SubPage {
     }
 
     if AppState.dns-mode != 0: Group {
-        header: "ÖZEL SUNUCU EKLE";
-        footer: root.custom-error != "" ? root.custom-error : "IP, IP:port ya da https:// / tls:// adresi.";
+        header: @tr("ÖZEL SUNUCU EKLE");
+        footer: root.custom-error != "" ? root.custom-error : @tr("IP, IP:port ya da https:// / tls:// adresi.");
         footer-error: root.custom-error != "";
         FieldRow {
             first: true;
-            placeholder: "Ad (örn. Ev DNS)";
+            placeholder: @tr("Ad (örn. Ev DNS)");
             text <=> root.custom-name;
             edited => {
                 root.custom-error = "";
@@ -493,7 +493,7 @@ export component DnsPage inherits SubPage {
         }
 
         FieldRow {
-            placeholder: "Adres";
+            placeholder: @tr("Adres");
             text <=> root.custom-address;
             edited => {
                 root.custom-error = "";
@@ -501,7 +501,7 @@ export component DnsPage inherits SubPage {
         }
 
         FieldRow {
-            placeholder: "Sunucu IP'si (yalnızca https / tls için)";
+            placeholder: @tr("Sunucu IP'si (yalnızca https / tls için)");
             text <=> root.custom-bootstrap;
             edited => {
                 root.custom-error = "";
@@ -510,7 +510,7 @@ export component DnsPage inherits SubPage {
 
         ActionRow {
             last: true;
-            text: "Ekle ve kullan";
+            text: @tr("Ekle ve kullan");
             activated => {
                 root.custom-error = AppState.add-custom-dns(root.custom-name, root.custom-address, root.custom-bootstrap);
                 if (root.custom-error == "") {
@@ -523,7 +523,7 @@ export component DnsPage inherits SubPage {
     }
 
     if AppState.dns-mode != 0 && AppState.custom-dns.length > 0: Group {
-        header: "ÖZEL SUNUCULAR";
+        header: @tr("ÖZEL SUNUCULAR");
         for item[i] in AppState.custom-dns: ItemRow {
             first: i == 0;
             last: i == AppState.custom-dns.length - 1;
@@ -536,10 +536,10 @@ export component DnsPage inherits SubPage {
     }
 
     if AppState.dns-mode == 1: Group {
-        header: "GÜVENLİK";
+        header: @tr("GÜVENLİK");
         ToggleRow {
             first: true;
-            title: "Ulaşılamazsa sistem DNS'ine dön";
+            title: @tr("Ulaşılamazsa sistem DNS'ine dön");
             checked: AppState.dns-fallback;
             toggled(v) => {
                 AppState.set-dns-fallback(v);
@@ -548,7 +548,7 @@ export component DnsPage inherits SubPage {
 
         ToggleRow {
             last: true;
-            title: "VPN bağlıyken DNS'e dokunma";
+            title: @tr("VPN bağlıyken DNS'e dokunma");
             checked: AppState.dns-skip-vpn;
             toggled(v) => {
                 AppState.set-dns-skip-vpn(v);
@@ -575,7 +575,7 @@ component HostGroup inherits Group {
         first: true;
         last: root.items.length == 0;
         placeholder: root.placeholder;
-        action: "Ekle";
+        action: @tr("Ekle");
         text <=> root.draft;
         edited => {
             root.error = "";
@@ -599,12 +599,12 @@ component HostGroup inherits Group {
 }
 
 export component SitesPage inherits SubPage {
-    title: "Siteler";
+    title: @tr("Siteler");
 
     VerticalLayout {
         spacing: 7px;
         Segmented {
-            options: ["Akıllı liste", "Tüm trafik"];
+            options: [@tr("Akıllı liste"), @tr("Tüm trafik")];
             current-index: AppState.scope-mode;
             selected(index) => {
                 AppState.set-scope-mode(index);
@@ -616,8 +616,8 @@ export component SitesPage inherits SubPage {
             padding-right: 16px;
             Text {
                 text: AppState.scope-mode == 0
-                    ? "Yalnızca engelli sitelere uygulanır."
-                    : "Tüm HTTPS bağlantılarına uygulanır.";
+                    ? @tr("Yalnızca engelli sitelere uygulanır.")
+                    : @tr("Tüm HTTPS bağlantılarına uygulanır.");
                 color: Theme.secondary;
                 font-size: Type.footnote;
                 wrap: word-wrap;
@@ -629,7 +629,7 @@ export component SitesPage inherits SubPage {
         ToggleRow {
             first: true;
             last: true;
-            title: "Açılmayan siteleri kendiliğinden ekle";
+            title: @tr("Açılmayan siteleri kendiliğinden ekle");
             checked: AppState.learning;
             toggled(v) => {
                 AppState.set-learning(v);
@@ -638,7 +638,7 @@ export component SitesPage inherits SubPage {
     }
 
     if AppState.scope-mode == 0: Group {
-        header: "HAZIR LİSTE";
+        header: @tr("HAZIR LİSTE");
         for cat[i] in AppState.categories: ToggleRow {
             first: i == 0;
             last: i == AppState.categories.length - 1;
@@ -651,7 +651,7 @@ export component SitesPage inherits SubPage {
     }
 
     if AppState.scope-mode == 0: HostGroup {
-        header: "KENDİ SİTELERİM";
+        header: @tr("KENDİ SİTELERİM");
         placeholder: "site.com";
         items: AppState.targets;
         add(host) => {
@@ -663,11 +663,11 @@ export component SitesPage inherits SubPage {
     }
 
     if AppState.scope-mode == 0: Group {
-        header: "ÖĞRENİLENLER";
+        header: @tr("ÖĞRENİLENLER");
         if AppState.learned.length == 0: EmptyRow {
             first: true;
             last: true;
-            text: "Henüz öğrenilen site yok.";
+            text: @tr("Henüz öğrenilen site yok.");
         }
 
         for item[i] in AppState.learned: ItemRow {
@@ -681,7 +681,7 @@ export component SitesPage inherits SubPage {
 
         if AppState.learned.length > 0: ActionRow {
             last: true;
-            text: "Tümünü unut";
+            text: @tr("Tümünü unut");
             destructive: true;
             activated => {
                 AppState.clear-learned();
@@ -690,8 +690,8 @@ export component SitesPage inherits SubPage {
     }
 
     HostGroup {
-        header: "ASLA DOKUNMA";
-        placeholder: "banka.com.tr";
+        header: @tr("ASLA DOKUNMA");
+        placeholder: @tr("banka.com.tr");
         items: AppState.excluded;
         add(host) => {
             return AppState.add-excluded(host);
@@ -705,13 +705,13 @@ export component SitesPage inherits SubPage {
 // ================================================================== genel
 
 export component GeneralPage inherits SubPage {
-    title: "Genel";
+    title: @tr("Genel");
 
     Group {
-        header: "BAŞLANGIÇ";
+        header: @tr("BAŞLANGIÇ");
         ToggleRow {
             first: true;
-            title: "Windows açılınca motoru başlat";
+            title: @tr("Windows açılınca motoru başlat");
             checked: AppState.start-with-windows;
             toggled(v) => {
                 AppState.set-start-with-windows(v);
@@ -719,7 +719,7 @@ export component GeneralPage inherits SubPage {
         }
 
         ToggleRow {
-            title: "Açılışta otomatik bağlan";
+            title: @tr("Açılışta otomatik bağlan");
             checked: AppState.auto-connect;
             toggled(v) => {
                 AppState.set-auto-connect(v);
@@ -728,7 +728,7 @@ export component GeneralPage inherits SubPage {
 
         ToggleRow {
             last: true;
-            title: "Oturum açılınca tepside başlat";
+            title: @tr("Oturum açılınca tepside başlat");
             checked: AppState.tray-at-login;
             toggled(v) => {
                 AppState.set-tray-at-login(v);
@@ -737,11 +737,11 @@ export component GeneralPage inherits SubPage {
     }
 
     Group {
-        header: "PENCERE";
+        header: @tr("PENCERE");
         ToggleRow {
             first: true;
             last: true;
-            title: "Kapatınca tepside kal";
+            title: @tr("Kapatınca tepside kal");
             checked: AppState.close-to-tray;
             toggled(v) => {
                 AppState.set-close-to-tray(v);
@@ -750,11 +750,11 @@ export component GeneralPage inherits SubPage {
     }
 
     Group {
-        header: "GÜNCELLEMELER";
+        header: @tr("GÜNCELLEMELER");
         ToggleRow {
             first: true;
             last: true;
-            title: "Güncellemeleri otomatik yükle";
+            title: @tr("Güncellemeleri otomatik yükle");
             checked: AppState.auto-update;
             toggled(v) => {
                 AppState.set-auto-update(v);
@@ -764,11 +764,11 @@ export component GeneralPage inherits SubPage {
     }
 
     Group {
-        header: "SORUN GİDERME";
+        header: @tr("SORUN GİDERME");
         ActionRow {
             first: true;
             last: true;
-            text: "Günlüğü aç";
+            text: @tr("Günlüğü aç");
             activated => {
                 AppState.open-logs();
             }
@@ -899,16 +899,16 @@ component ThemePreview inherits VerticalLayout {
 }
 
 export component AppearancePage inherits SubPage {
-    title: "Görünüm";
+    title: @tr("Görünüm");
 
     Group {
-        header: "TEMA";
+        header: @tr("TEMA");
         HorizontalLayout {
             padding-top: 18px;
             padding-bottom: 16px;
             alignment: space-around;
             ThemePreview {
-                label: "Sistem";
+                label: @tr("Sistem");
                 kind: 0;
                 selected: AppState.theme-index == 0;
                 clicked => {
@@ -917,7 +917,7 @@ export component AppearancePage inherits SubPage {
             }
 
             ThemePreview {
-                label: "Açık";
+                label: @tr("Açık");
                 kind: 2;
                 selected: AppState.theme-index == 2;
                 clicked => {
@@ -926,12 +926,43 @@ export component AppearancePage inherits SubPage {
             }
 
             ThemePreview {
-                label: "Koyu";
+                label: @tr("Koyu");
                 kind: 1;
                 selected: AppState.theme-index == 1;
                 clicked => {
                     AppState.select-theme(1);
                 }
+            }
+        }
+    }
+
+    // Dil adlari kendi dillerinde yazilir (cevrilmez).
+    Group {
+        header: @tr("DİL");
+        CheckRow {
+            first: true;
+            title: @tr("Sistem");
+            subtitle: @tr("Windows'un dilini kullanır");
+            selected: AppState.language-index == 0;
+            clicked => {
+                AppState.select-language(0);
+            }
+        }
+
+        CheckRow {
+            title: "Türkçe";
+            selected: AppState.language-index == 1;
+            clicked => {
+                AppState.select-language(1);
+            }
+        }
+
+        CheckRow {
+            last: true;
+            title: "English";
+            selected: AppState.language-index == 2;
+            clicked => {
+                AppState.select-language(2);
             }
         }
     }
@@ -985,7 +1016,7 @@ export component AppMark inherits Rectangle {
 }
 
 export component AboutPage inherits SubPage {
-    title: "Hakkında";
+    title: @tr("Hakkında");
 
     VerticalLayout {
         padding-top: 36px;
@@ -1007,7 +1038,7 @@ export component AboutPage inherits SubPage {
             }
 
             Text {
-                text: "Sürüm " + AppState.version;
+                text: @tr("Sürüm {}", AppState.version);
                 color: Theme.secondary;
                 font-size: Type.callout;
                 horizontal-alignment: center;
@@ -1018,13 +1049,13 @@ export component AboutPage inherits SubPage {
     Group {
         ValueRow {
             first: true;
-            title: "Güncellemeler";
+            title: @tr("Güncellemeler");
             value: AppState.update-text;
         }
 
         ActionRow {
             last: true;
-            text: AppState.update-ready ? "Şimdi yükle" : "Şimdi denetle";
+            text: AppState.update-ready ? @tr("Şimdi yükle") : @tr("Şimdi denetle");
             busy: AppState.update-busy;
             activated => {
                 if (AppState.update-ready) {
@@ -1037,11 +1068,11 @@ export component AboutPage inherits SubPage {
     }
 
     Group {
-        footer: "MIT lisanslı açık kaynak yazılım.";
+        footer: @tr("MIT lisanslı açık kaynak yazılım.");
         ValueRow {
             first: true;
             last: true;
-            title: "Kaynak kodu";
+            title: @tr("Kaynak kodu");
             value: "GitHub";
             link: true;
             clicked => {

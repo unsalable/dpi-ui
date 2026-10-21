@@ -21,7 +21,7 @@ use windows_sys::Win32::System::Services::{
 };
 use windows_sys::Win32::Storage::FileSystem::WRITE_DAC;
 
-use shared::{SERVICE_DISPLAY_NAME, SERVICE_NAME};
+use shared::{SERVICE_NAME, t};
 
 // SYSTEM ve Yoneticiler tam; Etkilesimli kullanicilar: sorgula, baslat, durdur, oku.
 const SERVICE_SDDL: &str = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPLORC;;;IU)(A;;CCLCSWLOCRRC;;;SU)";
@@ -36,7 +36,7 @@ pub fn install(exe: &Path, auto_start: bool) -> Result<(), String> {
 
     let info = ServiceInfo {
         name: OsString::from(SERVICE_NAME),
-        display_name: OsString::from(SERVICE_DISPLAY_NAME),
+        display_name: OsString::from(t!("DPI UI Motoru", "DPI UI Engine")),
         service_type: ServiceType::OWN_PROCESS,
         start_type: if auto_start { ServiceStartType::AutoStart } else { ServiceStartType::OnDemand },
         error_control: ServiceErrorControl::Normal,
@@ -56,7 +56,10 @@ pub fn install(exe: &Path, auto_start: bool) -> Result<(), String> {
         }
         Err(_) => manager.create_service(&info, access).map_err(|e| format!("Hizmet oluşturulamadı: {e}"))?,
     };
-    let _ = service.set_description("DPI atlatma motoru. Arayüz kapalıyken de bağlantıyı korur; çok az kaynak kullanır.");
+    let _ = service.set_description(t!(
+        "DPI atlatma motoru. Arayüz kapalıyken de bağlantıyı korur; çok az kaynak kullanır.",
+        "DPI bypass engine. Keeps the connection protected even when the app is closed; uses very few resources."
+    ));
 
     // Cokme ya da beklenmedik cikista 5 / 10 / 30 sn sonra yeniden baslat.
     let actions = ServiceFailureActions {
