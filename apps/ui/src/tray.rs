@@ -123,6 +123,8 @@ fn ensure_autorun() {
         winsys::set_autorun(p.tray_at_login);
         p.autorun_initialized = true;
         crate::prefs::save(&p);
+    } else {
+        winsys::repair_autorun(p.tray_at_login);
     }
 }
 

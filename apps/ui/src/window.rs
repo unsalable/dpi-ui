@@ -510,6 +510,8 @@ impl Ctx {
         if !p.autorun_initialized {
             winsys::set_autorun(p.tray_at_login);
             p.autorun_initialized = true;
+        } else {
+            winsys::repair_autorun(p.tray_at_login);
         }
         if !p.v1_checked {
             p.v1_checked = true;

@@ -167,6 +167,47 @@ pub fn set_autorun(enabled: bool) -> bool {
     }
 }
 
+/// Oturum acilisi kaydi istendigi halde yoksa ya da artik olmayan bir exe'yi gosteriyorsa yeniden
+/// yazar. Kaldirma kaydi siler ama tercih dosyasi kalir; yeniden kurulumda ya da kurulum klasoru
+/// degisince uygulama oturum acilisinda baslamaz olurdu.
+pub fn repair_autorun(tray_at_login: bool) {
+    if tray_at_login && !autorun_command().and_then(|c| run_command_exe(&c)).is_some_and(|exe| exe.exists()) {
+        set_autorun(true);
+    }
+}
+
+fn autorun_command() -> Option<String> {
+    use windows_sys::Win32::System::Registry::RRF_RT_REG_SZ;
+    let mut buf = vec![0u16; 1024];
+    let mut size = (buf.len() * 2) as u32;
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            wide(RUN_KEY).as_ptr(),
+            wide(RUN_VALUE).as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+/// `"C:\...\GoodbyeDPI3.exe" --tray` -> exe yolu.
+fn run_command_exe(cmd: &str) -> Option<std::path::PathBuf> {
+    let cmd = cmd.trim();
+    let exe = match cmd.strip_prefix('"') {
+        Some(rest) => &rest[..rest.find('"')?],
+        None => cmd.split(' ').next()?,
+    };
+    (!exe.is_empty()).then(|| exe.into())
+}
+
 #[allow(dead_code)]
 pub fn reg_dword_type() -> u32 {
     REG_DWORD
@@ -228,5 +269,20 @@ pub fn set_window_theme(hwnd: HWND, dark: bool) {
     unsafe {
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE as u32, &dark_mode as *const _ as *const c_void, 4);
         DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, &border as *const _ as *const c_void, 4);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn reads_exe_from_run_command() {
+        let cmd = format!("\"{}\" --tray", r"C:\Program Files\DPI UI\GoodbyeDPI3.exe");
+        assert_eq!(run_command_exe(&cmd), Some(PathBuf::from(r"C:\Program Files\DPI UI\GoodbyeDPI3.exe")));
+        assert_eq!(run_command_exe(r"C:\x\a.exe --tray"), Some(PathBuf::from(r"C:\x\a.exe")));
+        assert_eq!(run_command_exe("\"yarim"), None);
+        assert_eq!(run_command_exe(""), None);
     }
 }
