@@ -13,7 +13,7 @@
 ; /UPDATE=window|tray: 3.0.3 ve oncesinin arayuzden UAC ile baslattigi eski yol.
 
 #define AppName "DPI UI"
-#define AppVersion "3.0.6"
+#define AppVersion "3.0.7"
 #define AppPublisher "DPI UI"
 #define AppExe "GoodbyeDPI3.exe"
 #define ServiceExe "GoodbyeDPI3-Service.exe"
