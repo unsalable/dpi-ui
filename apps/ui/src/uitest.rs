@@ -85,6 +85,22 @@ impl Harness {
         self.advance(16);
     }
 
+    /// Basili tutup `dx` kadar saga ceker, sonra birakir.
+    pub fn press_drag(&mut self, x: f32, y: f32, dx: f32) {
+        let start = LogicalPosition::new(x, y);
+        self.window.dispatch_event(WindowEvent::PointerMoved { position: start });
+        self.window.dispatch_event(WindowEvent::PointerPressed { position: start, button: PointerEventButton::Left });
+        self.advance(16);
+        for i in 1..=4 {
+            let position = LogicalPosition::new(x + dx * i as f32 / 4.0, y);
+            self.window.dispatch_event(WindowEvent::PointerMoved { position });
+            self.advance(16);
+        }
+        let end = LogicalPosition::new(x + dx, y);
+        self.window.dispatch_event(WindowEvent::PointerReleased { position: end, button: PointerEventButton::Left });
+        self.advance(16);
+    }
+
     pub fn hover(&mut self, x: f32, y: f32) {
         self.window.dispatch_event(WindowEvent::PointerMoved { position: LogicalPosition::new(x, y) });
         self.advance(300);
@@ -293,6 +309,76 @@ mod tests {
             h.click(30.0, 26.0);
             h.advance(500);
             assert_eq!(h.app.get_depth(), 0, "ana ekrandan acilan sayfa ana ekrana donmeli");
+        }
+    }
+
+    /// Ayarlar ve geri dugmelerine hizli hizli basmak pencere suruklemeyi baslatmamali. Gecis
+    /// sirasinda dugmeler kaydigi icin tiklamalar ust cubugun bos yerine denk gelir; suruklemede
+    /// Windows uygulamanin dongusunu durdurur ve gecis donar.
+    #[test]
+    fn spamming_nav_buttons_never_starts_window_drag() {
+        let mut h = Harness::new(1.0);
+        gallery::sample(&h, EngineState::Off);
+        let (drags, f) = counter();
+        h.state().on_drag_window(f);
+        // Ayarlar/geri dugmesinin yeri; her tiklama bir oncekinin gecisi bitmeden gelir.
+        for _ in 0..12 {
+            h.click(28.0, 26.0);
+            h.advance(40);
+        }
+        // Menuden alt sayfa acip geri tusuna seri basmak.
+        h.advance(600);
+        h.app.set_depth(1);
+        h.advance(600);
+        for _ in 0..6 {
+            h.click(200.0, 136.0);
+            h.advance(30);
+            h.click(28.0, 26.0);
+            h.advance(30);
+        }
+        // Ust cubugun bos yerine tiklamak da surukleme degildir.
+        h.advance(600);
+        h.click(200.0, 26.0);
+        assert_eq!(drags.get(), 0, "tiklamalar pencere suruklemesi baslatmamali");
+
+        // Basili tutup cekmek ise pencereyi surukler (bir kez).
+        h.app.set_depth(0);
+        h.advance(600);
+        h.press_drag(200.0, 26.0, 12.0);
+        assert_eq!(drags.get(), 1, "basili tutup cekmek pencereyi suruklemeli");
+    }
+
+    /// Olcum (elle calistirilir): sayfa gecisinde bir karenin yazilim cizim suresi.
+    /// `cargo test --release -p goodbyedpi3-ui frame_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn frame_cost() {
+        // Slint platformu is parcacigi basina bir kez kurulur: her olcek kendi is parcaciginda.
+        for scale in [1.0f32, 1.5, 2.0] {
+            std::thread::spawn(move || frame_cost_at(scale)).join().unwrap();
+        }
+    }
+
+    fn frame_cost_at(scale: f32) {
+        {
+            let mut h = Harness::new(scale);
+            gallery::sample(&h, EngineState::On);
+            h.advance(800);
+            let mut times = Vec::new();
+            for (depth, sub) in [(1, 0), (2, 1), (1, 1), (0, 1), (2, 2), (0, 2)] {
+                h.app.set_depth(depth);
+                h.app.set_sub(sub);
+                for _ in 0..26 {
+                    h.advance(16);
+                    let t = std::time::Instant::now();
+                    let _ = h.frame();
+                    times.push(t.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let avg = times.iter().sum::<f64>() / times.len() as f64;
+            let p95 = times[times.len() * 95 / 100];
+            eprintln!("olcek {scale}: kare ort {avg:.2} ms, p95 {p95:.2} ms, en kotu {:.2} ms", times[times.len() - 1]);
         }
     }
 

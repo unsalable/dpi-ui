@@ -27,6 +27,26 @@ export component Page inherits Rectangle {
     }
 }
 
+/// Pencereyi surukleyen bos alan. Surukleme yalnizca basili tutup cekince baslar; tiklamak
+/// suruklemeye donmez. (Windows surukleme boyunca uygulamanin dongusunu durdurur: basinca
+/// baslasaydi, gecis sirasinda kayan dugmelerin yerine denk gelen hizli tiklamalar gecisi
+/// dondururdu.)
+export component DragArea inherits TouchArea {
+    // Her basista en fazla bir kez.
+    property <bool> started;
+    pointer-event(event) => {
+        if (event.kind == PointerEventKind.down) {
+            self.started = false;
+        }
+    }
+    moved => {
+        if (!self.started && self.pressed && (abs(self.mouse-x - self.pressed-x) > 4px || abs(self.mouse-y - self.pressed-y) > 4px)) {
+            self.started = true;
+            AppState.drag-window();
+        }
+    }
+}
+
 /// Gezinme cubugu: geri dugmesi ve ortada baslik. Bos yeri pencereyi surukler.
 export component NavBar inherits Rectangle {
     in property <string> title;
@@ -35,13 +55,7 @@ export component NavBar inherits Rectangle {
     callback back();
     height: Metrics.navbar;
 
-    TouchArea {
-        pointer-event(event) => {
-            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
-                AppState.drag-window();
-            }
-        }
-    }
+    DragArea { }
 
     Text {
         x: 96px;

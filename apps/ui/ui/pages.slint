@@ -4,7 +4,7 @@ import { Theme, Type, Metrics, Motion, Curves } from "tokens.slint";
 import { Icons } from "icons.slint";
 import { ConnectGlyph, PowerState } from "connect.slint";
 import { Icon, Tile, Segmented, GlyphButton } from "components.slint";
-import { Page, NavBar, Group, NavRow, ToggleRow, CheckRow, PickerRow, ActionRow, FieldRow, ItemRow, EmptyRow, ValueRow } from "widgets.slint";
+import { Page, NavBar, DragArea, Group, NavRow, ToggleRow, CheckRow, PickerRow, ActionRow, FieldRow, ItemRow, EmptyRow, ValueRow } from "widgets.slint";
 import { AppState, HostItem } from "state.slint";
 
 // ================================================================== ana ekran
@@ -18,13 +18,7 @@ export component HomePage inherits Page {
         // Ust cubuk: solda ayarlar; sagdaki pencere dugmeleri ust katmanda.
         Rectangle {
             height: Metrics.navbar;
-            TouchArea {
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
-                        AppState.drag-window();
-                    }
-                }
-            }
+            DragArea { }
 
             Text {
                 x: 96px;

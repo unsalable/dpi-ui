@@ -844,6 +844,12 @@ fn bind_callbacks(app: &AppWindow) {
     app.global::<AppState>().on_drag_window({
         let weak = app.as_weak();
         move || {
+            // Sol tus gercekten basili degilse suruklemeye girilmez: birakildiktan sonra baslayan
+            // surukleme pencereyi bir sonraki tiklamaya kadar imlece yapistirir ve dongu durur.
+            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+            if unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } as u16 & 0x8000 == 0 {
+                return;
+            }
             if let Some(app) = weak.upgrade() {
                 app.window().with_winit_window(|w| {
                     let _ = w.drag_window();
