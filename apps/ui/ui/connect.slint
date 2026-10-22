@@ -1,201 +1,93 @@
-// Baglanti simgesi: Face ID'nin kilit acma animasyonundan esinlenir.
-//   kapali     : dort kose parantezi ve ortada dunya (gri)
-//   baglaniyor : dunya kendi ekseninde doner (Face ID'nin tarama ani)
-//   bagli      : parantezler daireye kapanir, dunya kaybolur, onay isareti cizilir (yesil)
-//   hata       : simge kirmizi olur ve "hayir" der gibi saga sola sallanir
-// Butun sekiller 100x100'luk gorunum kutusunda her karede yeniden hesaplanir; animasyonlar
-// yalnizca durum degisince calisir, boslukta hicbir sey cizilmez.
+// Baglanti simgesi: dort kose parantezi ve ortada dunya.
+//   kapali     : parantezler ve dunya (gri)
+//   baglaniyor : dunya kuculup kaybolur; parantezler dort yaya donusup cemberde doner,
+//                boylari bir dalga gibi uzayip kisalir
+//   bagli      : yaylar yavaslayip bosluklarini kapatir ve halkaya kilitlenir; halka yayla
+//                buyur, onay isareti cizilir, disa ince bir halka acilir (yesil)
+//   kapanirken : halka ayrilir, parcalar donerek koselerine oturur, dunya geri gelir
+//   hata       : parantezler kirmizi olur ve "hayir" der gibi saga sola sallanir
+// Hareketler Slint'in yay (spring) egrisiyle: SwiftUI'daki gibi sure + ziplama; hareket yarida
+// degisirse hiz korunur. Donus animation-tick() ile kare kare hesaplanir ve yalnizca donerken
+// calisir; durunca hizini koruyarak yavaslar. Animasyon bitince hicbir sey cizilmez.
 
 import { Theme, Motion, Curves } from "tokens.slint";
 
 export enum PowerState { off, connecting, on, error }
 
-export component ConnectGlyph {
-    in property <PowerState> state: PowerState.off;
-    in property <string> label;
+/// Ortak cizim yardimcilari. Hepsi 100x100'luk gorunum kutusunda, merkez (50, 50); acilar
+/// saat yonunde ve tepeden olculur.
+global Geo {
+    /// (x, y) noktasini merkez etrafinda t derece dondurup "x y" yazar.
+    public pure function rot(x: float, y: float, t: float) -> string {
+        return (50 + (x - 50) * cos(t * 1deg) - (y - 50) * sin(t * 1deg)) + " " + (50 + (x - 50) * sin(t * 1deg) + (y - 50) * cos(t * 1deg));
+    }
+
+    /// Sol ust kose parcasi: ust kol, yaricapi br olan kose, sol kol. Kollarin ucu ortadan bg
+    /// kadar geride biter. Parca iki ucundan d kadar kirpilir (once kollar, sonra kose yayi)
+    /// ve merkez etrafinda t derece dondurulur. br = 44 ve bg = 0 iken parca tam ceyrek
+    /// cemberdir: dort parca bir daire olur.
+    public pure function piece(br: float, bg: float, d: float, t: float) -> string {
+        let a = max(0, 44 - bg - br);
+        if (d <= a) {
+            return " M " + Geo.rot(6 + br + a - d, 6, t) + " L " + Geo.rot(6 + br, 6, t)
+                + " A " + br + " " + br + " 0 0 0 " + Geo.rot(6, 6 + br, t)
+                + " L " + Geo.rot(6, 6 + br + a - d, t);
+        }
+        let k = (d - a) / br * 57.29578;
+        if (k >= 44.5) {
+            return "";
+        }
+        return " M " + Geo.rot(6 + br - br * sin(k * 1deg), 6 + br - br * cos(k * 1deg), t)
+            + " A " + br + " " + br + " 0 0 0 " + Geo.rot(6 + br - br * cos(k * 1deg), 6 + br - br * sin(k * 1deg), t);
+    }
+
+    /// Dort kose parantezi. m: 0 = parantez, 1 = daire. d0..d3: parca basina kirpma.
+    public pure function brackets(m: float, d0: float, d1: float, d2: float, d3: float, t: float) -> string {
+        let mc = clamp(m, 0, 1);
+        let br = 13 + 31 * mc;
+        let bg = 15 * (1 - mc);
+        return Geo.piece(br, bg, d0, t) + Geo.piece(br, bg, d1, t + 90) + Geo.piece(br, bg, d2, t + 180) + Geo.piece(br, bg, d3, t + 270);
+    }
+
+    /// Dunyanin dis cemberi ve ekvatoru.
+    public pure function globe(gr: float) -> string {
+        return "M 50 " + (50 - gr) + " A " + gr + " " + gr + " 0 1 1 50 " + (50 + gr) + " A " + gr + " " + gr + " 0 1 1 50 " + (50 - gr)
+            + " M " + (50 - gr) + " 50 L " + (50 + gr) + " 50";
+    }
+
+    /// Boylam cizgisi: kutuptan kutba yarim elips (iki kubik egri; yazilim cizici eliptik
+    /// yaylari guvenilir cizmez). phi: bakis acisi, gorunen yarim kure -90..90.
+    public pure function meridian(gr: float, phi: float) -> string {
+        if (abs(phi) >= 90) {
+            return "";
+        }
+        let sx = gr * sin(phi * 1deg);
+        return " M 50 " + (50 - gr) + " C " + (50 + 0.5523 * sx) + " " + (50 - gr) + " " + (50 + sx) + " " + (50 - 0.5523 * gr) + " " + (50 + sx) + " 50"
+            + " C " + (50 + sx) + " " + (50 + 0.5523 * gr) + " " + (50 + 0.5523 * sx) + " " + (50 + gr) + " 50 " + (50 + gr);
+    }
+
+    /// Onay isareti: (31,51) -> (44,64) -> (69,37); parcalarin uzunlugu 18.38 ve 36.80.
+    public pure function check(c: float) -> string {
+        let cd = clamp(c, 0, 1) * 55.18;
+        if (cd < 0.05) {
+            return "";
+        }
+        return cd <= 18.38
+            ? "M 31 51 L " + (31 + 13 * cd / 18.38) + " " + (51 + 13 * cd / 18.38)
+            : "M 31 51 L 44 64 L " + (44 + 25 * (cd - 18.38) / 36.8) + " " + (64 - 27 * (cd - 18.38) / 36.8);
+    }
+}
+
+/// Dokunma, klavye ve odak halkasi; cizimin ustune serilir.
+component Shell {
+    in property <length> ring;
     callback clicked();
-
-    width: 208px;
-    height: 208px;
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => {
-        root.clicked();
-    }
-
-    property <bool> is-on: root.state == PowerState.on;
-    property <bool> is-busy: root.state == PowerState.connecting;
-    property <bool> is-error: root.state == PowerState.error;
-
-    /// 0 = kose parantezleri, 1 = tam daire.
-    property <float> morph: 0;
-    /// Onay isaretinin cizilmis kismi.
-    property <float> check: 0;
-    /// Dunyanin gorunurlugu.
-    property <float> globe: 1;
-    /// Hata sallanmasi (tek seferlik 0 -> 1).
-    property <float> shake: 0;
-    /// Baglaninca disa yayilan halka (tek seferlik 0 -> 1).
-    property <float> ripple: 0;
-    /// Donme evresi: 0..1 arasi 45 derecelik tur. Desen her 45 derecede tekrarlar; donme
-    /// durdugunda tur tamamlanir, simge her zaman ayni (simetrik) pozda durur.
-    property <float> phase: 0;
-
-    states [
-        on when root.is-on: {
-            morph: 1;
-            check: 1;
-            globe: 0;
-            ripple: 1;
-            in {
-                animate globe { duration: 180ms * Motion.scale; easing: ease-in; }
-                animate morph { duration: 560ms * Motion.scale; easing: Curves.out; }
-                animate check { duration: 360ms * Motion.scale; delay: 180ms * Motion.scale; easing: ease-out; }
-                animate ripple { duration: 900ms * Motion.scale; delay: 280ms * Motion.scale; easing: ease-out; }
-            }
-            out {
-                animate check { duration: 160ms * Motion.scale; easing: ease-in; }
-                animate morph { duration: 460ms * Motion.scale; delay: 60ms * Motion.scale; easing: Curves.out; }
-                animate globe { duration: 300ms * Motion.scale; delay: 200ms * Motion.scale; easing: ease-out; }
-            }
-        }
-        error when root.is-error: {
-            shake: 1;
-            in {
-                animate shake { duration: 600ms * Motion.scale; }
-            }
-        }
-    ]
-
-    spin := Timer {
-        interval: 16ms;
-        running: root.is-busy || root.phase > 0;
-        triggered => {
-            if (root.phase + 0.0125 >= 1) {
-                root.phase = root.is-busy ? root.phase + 0.0125 - 1 : 0;
-            } else {
-                root.phase += 0.0125;
-            }
-        }
-    }
-
-    property <color> tint: root.is-on ? Theme.green : root.is-error ? Theme.red : root.is-busy ? Theme.label : Theme.secondary;
-    animate tint { duration: Motion.slow; }
-
-    // Cizim boyutu: uzerine gelince hafifce buyur, basinca kuculur, daireye kapanirken bir
-    // an sisip yerine oturur.
-    property <length> size: (ta.pressed ? 128px : ta.has-hover ? 142px : 136px) * (1 + 0.06 * sin(root.morph * 180deg));
-    animate size { duration: 260ms * Motion.scale; easing: Curves.spring; }
-    property <length> shift: 9px * sin(root.shake * 1080deg) * (1 - root.shake);
-
-    // ---------------------------------------------------------------- geometri
-    property <float> m: clamp(root.morph, 0, 1);
-    property <float> br: 13 + 31 * root.m;
-    property <float> bg: 15 * (1 - root.m);
-    property <string> brackets: "M " + (50 - root.bg) + " 6 L " + (6 + root.br) + " 6 A " + root.br + " " + root.br + " 0 0 0 6 " + (6 + root.br) + " L 6 " + (50 - root.bg)
-        + " M " + (50 + root.bg) + " 6 L " + (94 - root.br) + " 6 A " + root.br + " " + root.br + " 0 0 1 94 " + (6 + root.br) + " L 94 " + (50 - root.bg)
-        + " M 94 " + (50 + root.bg) + " L 94 " + (94 - root.br) + " A " + root.br + " " + root.br + " 0 0 1 " + (94 - root.br) + " 94 L " + (50 + root.bg) + " 94"
-        + " M " + (50 - root.bg) + " 94 L " + (6 + root.br) + " 94 A " + root.br + " " + root.br + " 0 0 1 6 " + (94 - root.br) + " L 6 " + (50 + root.bg);
-
-    property <float> gr: 19 + 6 * root.globe;
-    // Boylam cizgisi: kutuptan kutba yarim elips (iki kubik egri; yazilim cizici eliptik
-    // yaylari guvenilir cizmedigi icin).
-    pure function meridian(phi: float) -> string {
-        return abs(phi) >= 90 ? "" : root.half-ellipse(root.gr * sin(phi * 1deg));
-    }
-    pure function half-ellipse(sx: float) -> string {
-        return " M 50 " + (50 - root.gr) + " C " + (50 + 0.5523 * sx) + " " + (50 - root.gr) + " " + (50 + sx) + " " + (50 - 0.5523 * root.gr) + " " + (50 + sx) + " 50"
-            + " C " + (50 + sx) + " " + (50 + 0.5523 * root.gr) + " " + (50 + 0.5523 * sx) + " " + (50 + root.gr) + " 50 " + (50 + root.gr);
-    }
-    property <string> globe-path: "M 50 " + (50 - root.gr) + " A " + root.gr + " " + root.gr + " 0 1 1 50 " + (50 + root.gr) + " A " + root.gr + " " + root.gr + " 0 1 1 50 " + (50 - root.gr)
-        + " M " + (50 - root.gr) + " 50 L " + (50 + root.gr) + " 50";
-    /// k. boylamin bakis acisi (derece); gorunen yarim kure -90..90.
-    pure function lon(k: int) -> float {
-        return -135 + 45 * k + 45 * root.phase;
-    }
-    /// Kenara yaklasan boylam soner: donus uc boyutlu gorunur, kenarda "atlama" olmaz.
-    pure function lon-alpha(phi: float) -> float {
-        return abs(phi) >= 90 ? 0 : min(1, cos(phi * 1deg) * 1.6);
-    }
-
-    // Onay: (31,51) -> (44,64) -> (69,37); parcalarin uzunlugu 18.38 ve 36.80.
-    property <float> cd: clamp(root.check, 0, 1) * 55.18;
-    property <string> check-path: root.cd <= 18.38
-        ? "M 31 51 L " + (31 + 13 * root.cd / 18.38) + " " + (51 + 13 * root.cd / 18.38)
-        : "M 31 51 L 44 64 L " + (44 + 25 * (root.cd - 18.38) / 36.8) + " " + (64 - 27 * (root.cd - 18.38) / 36.8);
-
-    // ---------------------------------------------------------------- cizim
-    Rectangle {
-        property <length> d: root.size * 0.88 * (1 + 0.32 * root.ripple);
-        width: self.d;
-        height: self.d;
-        x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2;
-        border-radius: self.width / 2;
-        border-width: 2px;
-        border-color: Theme.green.with-alpha(root.ripple > 0 && root.ripple < 1 ? 0.45 * (1 - root.ripple) : 0);
-    }
-
-    Path {
-        width: root.size;
-        height: root.size;
-        x: (root.width - self.width) / 2 + root.shift;
-        y: (root.height - self.height) / 2;
-        viewbox-width: 100;
-        viewbox-height: 100;
-        commands: root.brackets;
-        fill: transparent;
-        stroke: root.tint;
-        stroke-width: 6px;
-        stroke-line-cap: round;
-    }
-
-    if root.globe > 0.01: Path {
-        width: root.size;
-        height: root.size;
-        x: (root.width - self.width) / 2 + root.shift;
-        y: (root.height - self.height) / 2;
-        viewbox-width: 100;
-        viewbox-height: 100;
-        commands: root.globe-path;
-        fill: transparent;
-        stroke: root.tint.with-alpha(root.globe);
-        stroke-width: 3.8px;
-        stroke-line-cap: round;
-    }
-
-    for k in root.globe > 0.01 ? 5 : 0: Path {
-        width: root.size;
-        height: root.size;
-        x: (root.width - self.width) / 2 + root.shift;
-        y: (root.height - self.height) / 2;
-        viewbox-width: 100;
-        viewbox-height: 100;
-        commands: root.meridian(root.lon(k));
-        fill: transparent;
-        stroke: root.tint.with-alpha(root.globe * root.lon-alpha(root.lon(k)));
-        stroke-width: 3.8px;
-        stroke-line-cap: round;
-    }
-
-    if root.check > 0.001: Path {
-        width: root.size;
-        height: root.size;
-        x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2;
-        viewbox-width: 100;
-        viewbox-height: 100;
-        commands: root.check-path;
-        fill: transparent;
-        stroke: root.tint;
-        stroke-width: 7px;
-        stroke-line-cap: round;
-        stroke-line-join: round;
-    }
+    out property <bool> pressed: ta.pressed;
+    out property <bool> hover: ta.has-hover;
 
     // Klavye odagi: yalnizca Tab ile gelindiginde gorunur.
     Rectangle {
-        width: root.size + 18px;
+        width: root.ring;
         height: self.width;
         x: (root.width - self.width) / 2;
         y: (root.height - self.height) / 2;
@@ -216,6 +108,247 @@ export component ConnectGlyph {
 
     ta := TouchArea {
         mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+/// Baglaninca disa dogru acilip sonen ince halka.
+component Ripple inherits Rectangle {
+    in property <length> base;
+    in property <float> t;
+    width: root.base * 0.88 * (1 + 0.3 * root.t);
+    height: self.width;
+    border-radius: self.width / 2;
+    border-width: 2px;
+    border-color: Theme.green.with-alpha(root.t > 0 && root.t < 1 ? 0.4 * (1 - root.t) : 0);
+}
+
+/// Cizim yuzeyi: 100 birimlik simge kutusunun cevresinde 25'er birim pay birakir; donen ya da
+/// yayla buyuyen sekiller kutunun kenarinda kesilmez. `box`: 100 birimin piksel boyu.
+component Canvas inherits Path {
+    in property <length> box;
+    width: self.box * 1.5;
+    height: self.width;
+    viewbox-x: -25;
+    viewbox-y: -25;
+    viewbox-width: 150;
+    viewbox-height: 150;
+    fill: transparent;
+    stroke-line-cap: round;
+}
+
+export component ConnectGlyph {
+    in property <PowerState> state: PowerState.off;
+    in property <string> label;
+    callback clicked();
+
+    width: 208px;
+    height: 208px;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    property <bool> is-on: root.state == PowerState.on;
+    property <bool> is-busy: root.state == PowerState.connecting;
+    property <bool> is-error: root.state == PowerState.error;
+    property <float> ts: Motion.scale;
+
+    // ---------------------------------------------------------------- yorunge
+    /// Derece / ms (1,2 saniyede bir tur).
+    property <float> speed: 0.3;
+    property <duration> t0;
+    property <bool> spinning;
+    property <float> spin-base;
+    property <float> coast-to;
+    property <float> coast-ms: 600;
+    property <float> coast: root.coast-to;
+    animate coast { duration: root.coast-ms * 1ms * root.ts; easing: cubic-bezier(0.33, 1, 0.68, 1); }
+    property <float> elapsed: root.spinning ? (animation-tick() - root.t0) / 1ms : 0;
+    property <float> spin-live: root.speed * (root.elapsed - 173.1 * (1 - pow(0.5, root.elapsed / 120)));
+    property <float> spin: root.spin-base + root.spin-live + root.coast;
+    property <bool> was-on;
+
+    /// Parcalar koselerine donerken bir sonraki ceyrek tura kadar yavaslayarak doner;
+    /// boylece parantezler hep duz durur. Halka kapaliyken (bagli) aci gorunmez.
+    function land() {
+        let rest = Math.mod(root.spin-base + root.coast-to, 90);
+        let d = rest < 0.01 ? 0 : 90 - rest;
+        let go = d < 40 ? d + 90 : d;
+        root.coast-ms = clamp(3 * go / root.speed, 450, 1100);
+        root.coast-to += go;
+    }
+
+    init => {
+        root.was-on = root.is-on;
+        if (root.is-busy) {
+            root.t0 = animation-tick();
+            root.spinning = true;
+        }
+    }
+
+    changed state => {
+        if (root.is-busy && !root.spinning) {
+            root.t0 = animation-tick();
+            root.spinning = true;
+        } else if (!root.is-busy && root.spinning) {
+            root.spin-base = Math.mod(root.spin-base + root.spin-live, 360);
+            root.spinning = false;
+            if (root.is-on) {
+                root.coast-ms = 600;
+                root.coast-to += root.speed * 600 / 3;
+            } else {
+                root.land();
+            }
+        } else if (root.was-on && !root.is-on) {
+            root.land();
+        }
+        root.was-on = root.is-on;
+    }
+
+    // ---------------------------------------------------------------- durumlar
+    /// 0 = kose parantezleri, 1 = cember uzerinde yaylar.
+    property <float> morph: 0;
+    /// Parca basina kirpma (bosluk); 0 = halka kapali.
+    property <float> gap: 0;
+    /// Parca boylarinin dalgalanmasi.
+    property <float> gate: 0;
+    property <float> gl: 1;
+    /// Butun simgenin olcegi: taramada biraz kuculur, kilitlenince yayla buyur.
+    property <float> grow: 1;
+    property <float> check: 0;
+    property <float> shake: 0;
+    property <float> ripple: 0;
+
+    states [
+        off when root.state == PowerState.off: {
+            morph: 0;
+            gap: 0;
+            gate: 0;
+            gl: 1;
+            grow: 1;
+            check: 0;
+            in {
+                animate check { duration: 140ms * root.ts; easing: ease-in; }
+                animate gate { duration: 300ms * root.ts; }
+                animate gap { duration: 520ms * root.ts; delay: 160ms * root.ts; easing: Curves.out; }
+                animate morph { duration: 620ms * root.ts; delay: 40ms * root.ts; easing: spring(0.2); }
+                animate grow { duration: 560ms * root.ts; easing: spring(0.3); }
+                animate gl { duration: 540ms * root.ts; delay: 220ms * root.ts; easing: spring(0.3); }
+            }
+        }
+        connecting when root.is-busy: {
+            morph: 1;
+            gap: 17;
+            gate: 1;
+            gl: 0;
+            grow: 0.86;
+            check: 0;
+            in {
+                animate gl { duration: 220ms * root.ts; easing: cubic-bezier(0.5, 0, 0.9, 0.5); }
+                animate morph { duration: 560ms * root.ts; easing: spring(0.15); }
+                animate gap { duration: 460ms * root.ts; easing: Curves.out; }
+                animate gate { duration: 700ms * root.ts; easing: ease-in-out; }
+                animate grow { duration: 600ms * root.ts; easing: spring(0.25); }
+                animate check { duration: 120ms * root.ts; }
+            }
+        }
+        on when root.is-on: {
+            morph: 1;
+            gap: 0;
+            gate: 0;
+            gl: 0;
+            grow: 1;
+            check: 1;
+            ripple: 1;
+            in {
+                animate gl { duration: 220ms * root.ts; easing: cubic-bezier(0.5, 0, 0.9, 0.5); }
+                animate morph { duration: 420ms * root.ts; easing: Curves.out; }
+                animate gap { duration: 520ms * root.ts; easing: cubic-bezier(0.5, 0, 0.2, 1); }
+                animate gate { duration: 300ms * root.ts; }
+                animate grow { duration: 700ms * root.ts; delay: 180ms * root.ts; easing: spring(0.45); }
+                animate check { duration: 420ms * root.ts; delay: 330ms * root.ts; easing: Curves.out; }
+                animate ripple { duration: 900ms * root.ts; delay: 420ms * root.ts; easing: ease-out; }
+            }
+        }
+        error when root.is-error: {
+            morph: 0;
+            gap: 0;
+            gate: 0;
+            gl: 1;
+            grow: 1;
+            check: 0;
+            shake: 1;
+            in {
+                animate check { duration: 140ms * root.ts; easing: ease-in; }
+                animate gate { duration: 280ms * root.ts; }
+                animate gap { duration: 500ms * root.ts; delay: 150ms * root.ts; easing: Curves.out; }
+                animate morph { duration: 600ms * root.ts; delay: 40ms * root.ts; easing: spring(0.2); }
+                animate grow { duration: 520ms * root.ts; easing: spring(0.3); }
+                animate gl { duration: 540ms * root.ts; delay: 160ms * root.ts; easing: spring(0.3); }
+                animate shake { duration: 650ms * root.ts; delay: 120ms * root.ts; }
+            }
+        }
+    ]
+
+    property <color> tint: root.is-on ? Theme.green : root.is-error ? Theme.red : root.is-busy ? Theme.label : Theme.secondary;
+    animate tint { duration: 340ms * root.ts; }
+
+    property <length> hover-size: shell.pressed ? 128px : shell.hover ? 142px : 136px;
+    animate hover-size { duration: 320ms * root.ts; easing: spring(0.35); }
+    property <float> over: root.morph - clamp(root.morph, 0, 1);
+    property <length> size: root.hover-size * root.grow * (1 + 0.4 * root.over);
+    property <length> shift: 9px * sin(root.shake * 1080deg) * (1 - root.shake);
+    /// Parca boylari bir dalga gibi sirayla uzayip kisalir.
+    property <float> wave: 5.5 * root.gate;
+    pure function trim(k: int) -> float {
+        return max(0, root.gap + root.wave * sin(root.spin * 2.4deg - k * 90deg));
+    }
+    property <float> gr: 25 * (0.12 + 0.88 * max(0, root.gl));
+    property <float> gl-alpha: clamp(root.gl * 1.4 - 0.2, 0, 1);
+
+    Ripple {
+        base: root.size;
+        t: root.ripple;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+    }
+
+    Canvas {
+        box: root.size;
+        x: (root.width - self.width) / 2 + root.shift;
+        y: (root.height - self.height) / 2;
+        commands: Geo.brackets(root.morph, root.trim(0), root.trim(1), root.trim(2), root.trim(3), root.spin);
+        stroke: root.tint;
+        stroke-width: 6px;
+    }
+
+    if root.gl-alpha > 0.01: Canvas {
+        box: root.size;
+        x: (root.width - self.width) / 2 + root.shift;
+        y: (root.height - self.height) / 2;
+        commands: Geo.globe(root.gr) + Geo.meridian(root.gr, -45) + Geo.meridian(root.gr, 0) + Geo.meridian(root.gr, 45);
+        stroke: root.tint.with-alpha(root.gl-alpha);
+        stroke-width: 3.8px;
+    }
+
+    if root.check > 0.001: Canvas {
+        box: root.size;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        commands: Geo.check(root.check);
+        stroke: root.tint;
+        stroke-width: 7px;
+        stroke-line-join: round;
+    }
+
+    shell := Shell {
+        width: root.width;
+        height: root.height;
+        ring: root.hover-size + 18px;
         clicked => {
             root.clicked();
         }

@@ -7,7 +7,7 @@ export struct Choice {
     id: string,
     title: string,
     subtitle: string,
-    /// Basligin yaninda kisa vurgu (orn. "Onerilen"); bos olabilir.
+    /// Basligin sagindaki kisa bilgi (orn. "Onerilen", sunucu adresi); bos olabilir.
     badge: string,
 }
 
@@ -48,7 +48,13 @@ export global AppState {
     in-out property <[Choice]> isps;
     in-out property <[string]> isp-names;
     in-out property <int> isp-index;
+    /// Tum yontemler (methods-main ardindan methods-more); method-index bu sirada.
     in-out property <[Choice]> methods;
+    /// Secili saglayicinin yontemleri (oneri sirasiyla) ve bolum basligi.
+    in-out property <[Choice]> methods-main;
+    in-out property <string> method-header;
+    /// Diger hazir yontemler ve ozel yontemler.
+    in-out property <[Choice]> methods-more;
     in-out property <int> method-index;
     in-out property <string> method-summary;
 

@@ -129,6 +129,65 @@ export component Segmented inherits Rectangle {
     }
 }
 
+/// Secim isareti (listelerde). Secilince soldan saga cizilir ve yayla yerine oturur; secim
+/// kalkinca geri sarilarak soner. Cizgi: (4.5,12.8) -> (9.6,17.8) -> (19.5,6.5), 24'luk kutu;
+/// parcalarin uzunlugu 7.142 ve 15.024.
+export component CheckMark {
+    in property <bool> on;
+    in property <color> tint: Theme.blue;
+    width: 18px;
+    height: 18px;
+
+    property <float> drawn: 0;
+    property <float> pop: 0.7;
+    property <float> alpha: 0;
+
+    states [
+        shown when root.on: {
+            drawn: 1;
+            pop: 1;
+            alpha: 1;
+            in {
+                animate alpha { duration: 90ms * Motion.scale; }
+                animate drawn { duration: 300ms * Motion.scale; delay: 30ms * Motion.scale; easing: Curves.out; }
+                animate pop { duration: 460ms * Motion.scale; easing: spring(0.45); }
+            }
+        }
+        hidden when !root.on: {
+            drawn: 0;
+            pop: 0.8;
+            alpha: 0;
+            in {
+                animate alpha, pop { duration: 200ms * Motion.scale; easing: ease-in; }
+                animate drawn { duration: 200ms * Motion.scale; easing: cubic-bezier(0.4, 0, 1, 1); }
+            }
+        }
+    ]
+
+    property <float> d: clamp(root.drawn, 0, 1) * 22.166;
+
+    // Hep var (bosken hicbir sey cizmez): yalnizca gorunurken olusturulsaydi, ilk secimde
+    // animasyonlu ozellikler ilk kez okunur ve animasyonsuz son degerden baslardi.
+    Path {
+        width: root.width * root.pop;
+        height: self.width;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: root.d < 0.05
+            ? ""
+            : root.d <= 7.142
+            ? "M 4.5 12.8 L " + (4.5 + 5.1 * root.d / 7.142) + " " + (12.8 + 5 * root.d / 7.142)
+            : "M 4.5 12.8 L 9.6 17.8 L " + (9.6 + 9.9 * (root.d - 7.142) / 15.024) + " " + (17.8 - 11.3 * (root.d - 7.142) / 15.024);
+        stroke: root.tint.with-alpha(root.alpha);
+        stroke-width: 2.4px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        fill: transparent;
+    }
+}
+
 /// Mavi metin dugmesi (iOS "Ekle", "Kullan" gibi).
 export component TextButton inherits Rectangle {
     in property <string> text;
@@ -233,5 +292,74 @@ export component GlyphButton inherits Rectangle {
         clicked => {
             root.clicked();
         }
+    }
+}
+
+/// Degisen metin: eskisi hafifce yukari kayarak soner, yenisi o neredeyse kaybolunca alttan
+/// belirir (odeme ekranindaki "Isleniyor" -> "Tamam" gecisi gibi; farkli genislikteki iki yazi
+/// ust uste binip okunmaz hale gelmez). Iki yuva sirayla kullanilir; tek bir sayac (n) ve ona
+/// kayan p ikisini birlikte surer: gecisin ilerlemesi p - (n - 1).
+export component FadeText {
+    in property <string> text;
+    in property <color> color;
+    in property <length> font-size;
+    in property <int> font-weight: 400;
+    in property <string> font-family;
+    in property <bool> wrap;
+
+    property <string> a;
+    property <string> b;
+    /// Degisiklik sayisi; tekse b, ciftse a yuvasi gorunur.
+    property <int> n;
+    property <float> p: root.n;
+    animate p { duration: 380ms * Motion.scale; }
+    property <float> k: clamp(root.p - (root.n - 1), 0, 1);
+    property <float> out-alpha: clamp(1 - root.k / 0.36, 0, 1);
+    property <float> in-k: clamp((root.k - 0.4) / 0.6, 0, 1);
+    /// ease-out-cubic
+    property <float> in-ease: 1 - pow(1 - root.in-k, 3);
+    property <bool> b-shown: Math.mod(root.n, 2) == 1;
+
+    init => {
+        root.a = root.text;
+    }
+
+    changed text => {
+        if (Math.mod(root.n, 2) == 0) {
+            root.b = root.text;
+        } else {
+            root.a = root.text;
+        }
+        root.n += 1;
+    }
+
+    // Yazi kadar yer kaplar; sayfanin bos alanini yutmaz (simge yerinden oynamasin).
+    min-height: max(ta.preferred-height, tb.preferred-height);
+    preferred-height: self.min-height;
+    max-height: self.min-height;
+    vertical-stretch: 0;
+
+    ta := Text {
+        width: root.width;
+        y: root.b-shown ? -5px * root.k : 6px * (1 - root.in-ease);
+        text: root.a;
+        color: root.color.with-alpha(root.b-shown ? root.out-alpha : root.in-ease);
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        font-family: root.font-family;
+        horizontal-alignment: center;
+        wrap: root.wrap ? word-wrap : no-wrap;
+    }
+
+    tb := Text {
+        width: root.width;
+        y: root.b-shown ? 6px * (1 - root.in-ease) : -5px * root.k;
+        text: root.b;
+        color: root.color.with-alpha(root.b-shown ? root.in-ease : root.out-alpha);
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        font-family: root.font-family;
+        horizontal-alignment: center;
+        wrap: root.wrap ? word-wrap : no-wrap;
     }
 }

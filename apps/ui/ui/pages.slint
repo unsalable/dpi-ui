@@ -3,7 +3,7 @@
 import { Theme, Type, Metrics, Motion, Curves } from "tokens.slint";
 import { Icons } from "icons.slint";
 import { ConnectGlyph, PowerState } from "connect.slint";
-import { Icon, Tile, Segmented, GlyphButton } from "components.slint";
+import { Icon, Tile, Segmented, GlyphButton, FadeText, CheckMark } from "components.slint";
 import { Page, NavBar, DragArea, Group, NavRow, ToggleRow, CheckRow, PickerRow, ActionRow, FieldRow, ItemRow, EmptyRow, ValueRow } from "widgets.slint";
 import { AppState, HostItem } from "state.slint";
 
@@ -104,13 +104,13 @@ export component HomePage inherits Page {
             height: 10px;
         }
 
-        Text {
+        // Durum degisince eski yazi soner, yenisi alttan belirir.
+        FadeText {
             text: AppState.status-title;
             color: Theme.label;
             font-family: Type.display;
             font-size: Type.title;
             font-weight: 600;
-            horizontal-alignment: center;
         }
 
         Rectangle {
@@ -120,12 +120,11 @@ export component HomePage inherits Page {
         HorizontalLayout {
             padding-left: 40px;
             padding-right: 40px;
-            Text {
+            FadeText {
                 text: AppState.status-sub;
                 color: Theme.secondary;
                 font-size: Type.body;
-                horizontal-alignment: center;
-                wrap: word-wrap;
+                wrap: true;
             }
         }
 
@@ -308,6 +307,10 @@ component SubPage inherits Page {
 
 export component MethodPage inherits SubPage {
     title: @tr("Bağlantı yöntemi");
+    /// Diger yontemler acildi mi? Secili yontem oradaysa liste hep acik durur.
+    property <bool> more-open;
+    property <bool> picked-in-more: AppState.method-index >= AppState.methods-main.length;
+    property <bool> show-more: root.more-open || root.picked-in-more;
 
     Group {
         PickerRow {
@@ -322,18 +325,57 @@ export component MethodPage inherits SubPage {
         }
     }
 
+    // Saglayicinin yontemleri oneri sirasiyla; yalnizca secili satir ne yaptigini anlatir.
     Group {
-        header: @tr("YÖNTEM");
+        header: AppState.method-header;
         footer: @tr("Bir site açılmazsa sıradaki yöntemi dene.");
-        for option[index] in AppState.methods: CheckRow {
+        for option[index] in AppState.methods-main: CheckRow {
             first: index == 0;
-            last: index == AppState.methods.length - 1;
+            last: index == AppState.methods-main.length - 1;
             title: option.title;
             subtitle: option.subtitle;
+            subtitle-shown: index == AppState.method-index;
             badge: option.badge;
             selected: index == AppState.method-index;
             clicked => {
                 AppState.select-method(index);
+            }
+        }
+    }
+
+    // Digerleri kapali baslar; acilinca satirlar yukaridan asagi acilir.
+    if AppState.methods-more.length > 0: Group {
+        header: @tr("DİĞER YÖNTEMLER");
+        Rectangle {
+            clip: true;
+            height: root.show-more ? more-rows.preferred-height : 0px;
+            animate height { duration: 360ms * Motion.scale; easing: Curves.push; }
+            more-rows := VerticalLayout {
+                y: 0;
+                height: self.preferred-height;
+                for option[index] in AppState.methods-more: CheckRow {
+                    first: index == 0;
+                    last: root.picked-in-more && index == AppState.methods-more.length - 1;
+                    // Kapaliyken (ya da kapanirken) gorunmeyen satirlar tiklanmaz.
+                    interactive: root.show-more;
+                    title: option.title;
+                    subtitle: option.subtitle;
+                    subtitle-shown: AppState.methods-main.length + index == AppState.method-index;
+                    badge: option.badge;
+                    selected: AppState.methods-main.length + index == AppState.method-index;
+                    clicked => {
+                        AppState.select-method(AppState.methods-main.length + index);
+                    }
+                }
+            }
+        }
+
+        if !root.picked-in-more: ActionRow {
+            first: !root.show-more;
+            last: true;
+            text: root.show-more ? @tr("Daha az göster") : @tr("{} yöntem daha göster", AppState.methods-more.length);
+            activated => {
+                root.more-open = !root.more-open;
             }
         }
     }
@@ -381,6 +423,7 @@ export component DnsPage inherits SubPage {
             last: index == AppState.dns-providers.length - 1;
             title: option.title;
             subtitle: option.subtitle;
+            badge: option.badge;
             selected: index == AppState.dns-index;
             clicked => {
                 AppState.select-dns(index);
@@ -870,22 +913,46 @@ component ThemePreview inherits VerticalLayout {
 
     HorizontalLayout {
         alignment: center;
+        // Secilince mavi dolgu ortadan yayla buyur, beyaz isaret cizilir.
         Rectangle {
             width: 22px;
             height: 22px;
             border-radius: 11px;
-            border-width: root.selected ? 0 : 1.5px;
-            border-color: Theme.tertiary;
-            background: root.selected ? Theme.blue : transparent;
-            animate background { duration: Motion.fast; }
-            Icon {
-                commands: Icons.line-check;
-                width: 14px;
-                height: 14px;
+            border-width: 1.5px;
+            border-color: Theme.tertiary.with-alpha(root.selected ? 0 : 1);
+            animate border-color { duration: Motion.fast; }
+            // Isaret dolgunun icinde ve onunla birlikte buyuyup kuculur; kalkarken disari tasmaz.
+            Rectangle {
+                property <length> d: 0px;
+                states [
+                    on when root.selected: {
+                        d: 22px;
+                        in {
+                            animate d { duration: 420ms * Motion.scale; easing: spring(0.4); }
+                        }
+                    }
+                    off when !root.selected: {
+                        d: 0px;
+                        in {
+                            animate d { duration: 180ms * Motion.scale; easing: ease-in; }
+                        }
+                    }
+                ]
+                width: max(0px, self.d);
+                height: self.width;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                weight: 2.6px;
-                tint: #FFFFFF.with-alpha(root.selected ? 1 : 0);
+                border-radius: self.width / 2;
+                background: Theme.blue;
+
+                CheckMark {
+                    on: root.selected;
+                    tint: #FFFFFF;
+                    width: 14px * clamp(parent.width / 22px, 0, 1);
+                    height: self.width;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
             }
 
             TouchArea {

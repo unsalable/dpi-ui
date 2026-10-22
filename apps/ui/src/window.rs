@@ -72,6 +72,20 @@ fn s(v: impl Into<SharedString>) -> SharedString {
     v.into()
 }
 
+/// Bolum basligi icin buyuk harf; Turkcede i -> İ, ı -> I.
+fn upper(text: &str, en: bool) -> String {
+    if en {
+        return text.to_uppercase();
+    }
+    text.chars()
+        .flat_map(|c| match c {
+            'i' => "İ".chars().collect::<Vec<_>>(),
+            'ı' => vec!['I'],
+            c => c.to_uppercase().collect(),
+        })
+        .collect()
+}
+
 fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
     ModelRc::new(VecModel::from(items))
 }
@@ -334,23 +348,25 @@ impl Ctx {
         st.set_isps(model(isps));
         st.set_isp_index(isp_index as i32);
 
-        // Yontemler: secili saglayicinin onerileri basta, sonra digerleri, sonra ozeller.
+        // Yontemler: secili saglayicinin onerileri (ayri bolum), sonra digerleri, sonra ozeller.
+        // Alt satir yontemin ne yaptigini anlatir; ekranda yalnizca secili satirda gorunur.
         let isp = &presets::ISPS[isp_index];
         let mut ids: Vec<String> = Vec::new();
-        let mut items: Vec<Choice> = Vec::new();
+        let mut main: Vec<Choice> = Vec::new();
+        let mut more: Vec<Choice> = Vec::new();
         for (n, id) in isp.methods.iter().enumerate() {
             if let Some(m) = presets::method(id) {
                 let badge = if n == 0 { t!("Önerilen", "Recommended") } else { String::new() };
-                items.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.config().short_summary(en)), badge: s(badge) });
+                main.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s(badge) });
                 ids.push(m.id.into());
             }
         }
         for m in presets::ALL.iter().filter(|m| !isp.methods.contains(&m.id)) {
-            items.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.config().short_summary(en)), badge: s("") });
+            more.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s("") });
             ids.push(m.id.into());
         }
         for c in &cfg.custom_methods {
-            items.push(Choice {
+            more.push(Choice {
                 id: s(c.id.as_str()),
                 title: s(t!("Özel · {}", "Custom · {}", c.name)),
                 subtitle: s(c.config.short_summary(en)),
@@ -359,7 +375,15 @@ impl Ctx {
             ids.push(c.id.clone());
         }
         let method_index = ids.iter().position(|i| i.eq_ignore_ascii_case(&cfg.method)).unwrap_or(0);
-        st.set_methods(model(items));
+        let header = if isp.id == "general" {
+            t!("ÖNERİLEN", "RECOMMENDED")
+        } else {
+            upper(&t!("{} için", "For {}", isp.label(en)), en)
+        };
+        st.set_methods(model(main.iter().chain(more.iter()).cloned().collect()));
+        st.set_methods_main(model(main));
+        st.set_methods_more(model(more));
+        st.set_method_header(s(header));
         st.set_method_index(method_index as i32);
         *self.method_ids.borrow_mut() = ids;
 
@@ -378,14 +402,13 @@ impl Ctx {
                 DnsMode::Off => false,
             };
             if fits {
-                let detail = match cfg.dns.mode {
-                    DnsMode::Redirect => {
-                        let (a, port) = p.udp_v4.unwrap_or(("", 53));
-                        format!("{} · {a}:{port}", p.about(en))
-                    }
-                    _ => format!("{} · {}", p.about(en), if p.doh_url.starts_with("tls://") { "DoT" } else { "DoH" }),
+                // Yonlendirmede adres (53 disindaki port onemli) satirin saginda durur.
+                let address = match (cfg.dns.mode, p.udp_v4) {
+                    (DnsMode::Redirect, Some((a, 53))) => a.to_owned(),
+                    (DnsMode::Redirect, Some((a, port))) => format!("{a}:{port}"),
+                    _ => String::new(),
                 };
-                providers.push(Choice { id: s(p.id), title: s(p.label(en)), subtitle: s(detail), badge: s("") });
+                providers.push(Choice { id: s(p.id), title: s(p.label(en)), subtitle: s(p.about(en)), badge: s(address) });
                 dns_ids.push(p.id.to_owned());
             }
         }
@@ -1176,6 +1199,15 @@ pub(crate) fn populate_for_test(app: &AppWindow, engine: EngineStatus, learned: 
     ctx.apply_learned();
     ctx.apply_engine();
     app.global::<AppState>().set_version(s(shared::VERSION));
+}
+
+/// Arayuz testleri: ayari degistirip ekrana uygular (orn. saglayici, DNS kipi).
+#[cfg(test)]
+pub(crate) fn config_for_test(app: &AppWindow, f: impl FnOnce(&mut AppConfig)) {
+    let ctx = Ctx::new(app, Prefs::default(), true);
+    let mut cfg = AppConfig::default().sanitized();
+    f(&mut cfg);
+    ctx.apply_config(cfg);
 }
 
 #[cfg(test)]

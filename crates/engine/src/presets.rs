@@ -41,12 +41,13 @@ pub const DEFAULT: Method = Method {
     build: DpiConfig::default,
 };
 
+/// GoodbyeDPI-Turkey "-5 --set-ttl 5" karsiligi.
 pub const FIXED_TTL: Method = Method {
     id: "fixedttl",
     name: "Sabit TTL",
     name_en: "Fixed TTL",
-    description: "Sahte paket her zaman TTL 5 ile gider (GoodbyeDPI-Turkey \"-5 --set-ttl 5\" karşılığı).",
-    description_en: "The fake packet always uses TTL 5 (equivalent of GoodbyeDPI-Turkey \"-5 --set-ttl 5\").",
+    description: "Sahte paket her zaman TTL 5 ile gider.",
+    description_en: "The fake packet always uses TTL 5.",
     build: || DpiConfig { auto_ttl: false, split_sni: false, ..DpiConfig::default() },
 };
 
@@ -67,39 +68,43 @@ pub const DISORDER: Method = Method {
     },
 };
 
+/// zapret fake ttl=4 karsiligi.
 pub const FAKE_TTL4: Method = Method {
     id: "ttl4",
     name: "Sahte TTL 4",
     name_en: "Fake TTL 4",
-    description: "Sahte paket TTL 4 ile gider, istek bölünmez (zapret fake ttl=4).",
-    description_en: "The fake packet uses TTL 4; the request isn't split (zapret fake ttl=4).",
+    description: "Sahte paket TTL 4 ile gider, istek bölünmez.",
+    description_en: "The fake packet uses TTL 4; the request isn't split.",
     build: || DpiConfig { auto_ttl: false, ttl: 4, split_tls: false, ..DpiConfig::default() },
 };
 
+/// zapret fake ttl=3 karsiligi.
 pub const FAKE_TTL3: Method = Method {
     id: "ttl3",
     name: "Sahte TTL 3",
     name_en: "Fake TTL 3",
-    description: "Sahte paket TTL 3 ile gider, istek bölünmez (zapret fake ttl=3).",
-    description_en: "The fake packet uses TTL 3; the request isn't split (zapret fake ttl=3).",
+    description: "Sahte paket TTL 3 ile gider, istek bölünmez.",
+    description_en: "The fake packet uses TTL 3; the request isn't split.",
     build: || DpiConfig { auto_ttl: false, ttl: 3, split_tls: false, ..DpiConfig::default() },
 };
 
+/// zapret fake md5sig karsiligi.
 pub const MD5SIG: Method = Method {
     id: "md5sig",
     name: "MD5 imzası",
     name_en: "MD5 signature",
-    description: "Sahte paket TCP MD5 imzasıyla gider; sunucu atar, DPI işler (zapret fake md5sig).",
-    description_en: "The fake packet carries a TCP MD5 signature; the server drops it, DPI processes it (zapret fake md5sig).",
+    description: "Sahte paket TCP MD5 imzasıyla gider; sunucu atar, DPI işler.",
+    description_en: "The fake packet carries a TCP MD5 signature; the server drops it, DPI processes it.",
     build: || DpiConfig { fake_ttl: false, fake_md5sig: true, split_tls: false, ..DpiConfig::default() },
 };
 
+/// zapret fake md5sig ttl=3 karsiligi.
 pub const MD5_TTL3: Method = Method {
     id: "md5ttl3",
     name: "MD5 + TTL 3",
     name_en: "MD5 + TTL 3",
-    description: "Sahte paket hem MD5 imzası hem TTL 3 ile gider (zapret fake md5sig ttl=3).",
-    description_en: "The fake packet carries both an MD5 signature and TTL 3 (zapret fake md5sig ttl=3).",
+    description: "Sahte paket hem MD5 imzası hem TTL 3 ile gider.",
+    description_en: "The fake packet carries both an MD5 signature and TTL 3.",
     build: || DpiConfig { auto_ttl: false, ttl: 3, fake_md5sig: true, split_tls: false, ..DpiConfig::default() },
 };
 
@@ -142,52 +147,57 @@ pub const PLAIN_SPLIT: Method = Method {
     },
 };
 
+/// GoodbyeDPI -9 karsiligi.
 pub const WRONG_CHECKSUM: Method = Method {
     id: "checksum",
     name: "Yanlış sağlama",
     name_en: "Wrong checksum",
-    description: "Sahte paket bozuk sağlama ve SEQ ile gider (GoodbyeDPI -9). TTL yöntemi işe yaramazsa dene.",
-    description_en: "The fake packet has a broken checksum and SEQ (GoodbyeDPI -9). Try it if the TTL method doesn't work.",
+    description: "Sahte paket bozuk sağlama ve SEQ ile gider. TTL yöntemi işe yaramazsa dene.",
+    description_en: "The fake packet has a broken checksum and SEQ. Try it if the TTL method doesn't work.",
     build: || DpiConfig { fake_ttl: false, fake_wrong_checksum: true, fake_wrong_seq: true, ..DpiConfig::default() },
 };
 
 /// GoodbyeDPI -6: sahte paket gecmiste kalan SEQ ile gider (TTL'e dokunmaz).
+/// GoodbyeDPI -6 karsiligi.
 pub const WRONG_SEQ: Method = Method {
     id: "wrongseq",
     name: "Yanlış SEQ",
     name_en: "Wrong SEQ",
-    description: "Sahte paket geçersiz sıra numarasıyla gider; sunucu atar (GoodbyeDPI -6).",
-    description_en: "The fake packet has an invalid sequence number; the server drops it (GoodbyeDPI -6).",
+    description: "Sahte paket geçersiz sıra numarasıyla gider; sunucu atar.",
+    description_en: "The fake packet has an invalid sequence number; the server drops it.",
     build: || DpiConfig { fake_ttl: false, fake_wrong_seq: true, ..DpiConfig::default() },
 };
 
 /// GoodbyeDPI -7: sahte paket yalnizca bozuk saglamayla gider.
+/// GoodbyeDPI -7 karsiligi.
 pub const BAD_CHECKSUM: Method = Method {
     id: "badsum",
     name: "Bozuk sağlama",
     name_en: "Bad checksum",
-    description: "Sahte paket yalnızca bozuk TCP sağlamasıyla gider (GoodbyeDPI -7).",
-    description_en: "The fake packet only has a broken TCP checksum (GoodbyeDPI -7).",
+    description: "Sahte paket yalnızca bozuk TCP sağlamasıyla gider.",
+    description_en: "The fake packet only has a broken TCP checksum.",
     build: || DpiConfig { fake_ttl: false, fake_wrong_checksum: true, ..DpiConfig::default() },
 };
 
 /// GoodbyeDPI "-5 --set-ttl 3": TTL 3 sahte paket + bolme.
+/// GoodbyeDPI -5 --set-ttl 3 karsiligi.
 pub const TTL3_SPLIT: Method = Method {
     id: "ttl3split",
     name: "TTL 3 + bölme",
     name_en: "TTL 3 + split",
-    description: "Sahte paket TTL 3 ile gider, istek ters sırada bölünür (GoodbyeDPI -5 --set-ttl 3).",
-    description_en: "The fake packet uses TTL 3; the request is split in reverse order (GoodbyeDPI -5 --set-ttl 3).",
+    description: "Sahte paket TTL 3 ile gider, istek ters sırada bölünür.",
+    description_en: "The fake packet uses TTL 3; the request is split in reverse order.",
     build: || DpiConfig { auto_ttl: false, ttl: 3, split_sni: false, ..DpiConfig::default() },
 };
 
 /// GoodbyeDPI "-5 --set-ttl 4".
+/// GoodbyeDPI -5 --set-ttl 4 karsiligi.
 pub const TTL4_SPLIT: Method = Method {
     id: "ttl4split",
     name: "TTL 4 + bölme",
     name_en: "TTL 4 + split",
-    description: "Sahte paket TTL 4 ile gider, istek ters sırada bölünür (GoodbyeDPI -5 --set-ttl 4).",
-    description_en: "The fake packet uses TTL 4; the request is split in reverse order (GoodbyeDPI -5 --set-ttl 4).",
+    description: "Sahte paket TTL 4 ile gider, istek ters sırada bölünür.",
+    description_en: "The fake packet uses TTL 4; the request is split in reverse order.",
     build: || DpiConfig { auto_ttl: false, ttl: 4, split_sni: false, ..DpiConfig::default() },
 };
 

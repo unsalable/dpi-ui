@@ -3,7 +3,7 @@
 
 import { Theme, Type, Metrics, Motion, Curves } from "tokens.slint";
 import { Icons } from "icons.slint";
-import { Icon, Tile, Switch, TextButton, BackButton } from "components.slint";
+import { Icon, Tile, Switch, TextButton, BackButton, CheckMark } from "components.slint";
 import { AppState } from "state.slint";
 
 /// Her ekranin zemini. Bos alanlara yapilan tiklamalari yutar (alttaki sayfaya gecmez);
@@ -276,53 +276,59 @@ export component ToggleRow inherits RowBase {
 export component CheckRow inherits RowBase {
     in property <string> title;
     in property <string> subtitle;
+    /// Basligin sagindaki kisa bilgi (orn. "Onerilen", sunucu adresi).
     in property <string> badge;
+    /// false iken alt satir yumusakca kapanir (yalnizca secili satirin aciklamasi icin).
+    in property <bool> subtitle-shown: true;
     in property <bool> selected;
     pad-v: 10px;
     accessible-role: list-item;
     accessible-label: root.title;
+    accessible-description: root.subtitle-shown ? root.subtitle : "";
     accessible-item-selected: root.selected;
 
     VerticalLayout {
         alignment: center;
         horizontal-stretch: 1;
-        spacing: 2px;
         HorizontalLayout {
             spacing: 8px;
-            alignment: start;
             Text {
                 text: root.title;
                 color: Theme.label;
                 font-size: Type.body;
                 overflow: elide;
+                horizontal-stretch: 1;
             }
 
             if root.badge != "": Text {
                 text: root.badge;
-                color: Theme.green;
-                font-size: Type.footnote;
-                font-weight: 600;
+                color: Theme.secondary;
+                font-size: Type.callout;
                 vertical-alignment: center;
             }
         }
 
-        if root.subtitle != "": Text {
-            text: root.subtitle;
-            color: Theme.secondary;
-            font-size: Type.footnote;
-            wrap: word-wrap;
+        if root.subtitle != "": Rectangle {
+            clip: true;
+            height: root.subtitle-shown ? sub.preferred-height + 2px : 0px;
+            animate height { duration: 280ms * Motion.scale; easing: Curves.out; }
+            sub := Text {
+                y: 2px;
+                width: parent.width;
+                height: self.preferred-height;
+                text: root.subtitle;
+                color: Theme.secondary.with-alpha(root.subtitle-shown ? 1 : 0);
+                font-size: Type.footnote;
+                wrap: word-wrap;
+                animate color { duration: 220ms * Motion.scale; }
+            }
         }
     }
 
     VerticalLayout {
         alignment: center;
-        Icon {
-            commands: Icons.line-check;
-            width: 18px;
-            height: 18px;
-            weight: 2.4px;
-            tint: Theme.blue.with-alpha(root.selected ? 1 : 0);
-            animate tint { duration: Motion.fast; }
+        CheckMark {
+            on: root.selected;
         }
     }
 }

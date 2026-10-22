@@ -60,11 +60,17 @@ msgstr "About"
 msgid "İnternet sağlayıcı"
 msgstr "Internet provider"
 
-msgid "YÖNTEM"
-msgstr "METHOD"
-
 msgid "Bir site açılmazsa sıradaki yöntemi dene."
 msgstr "If a site doesn't open, try the next method."
+
+msgid "DİĞER YÖNTEMLER"
+msgstr "OTHER METHODS"
+
+msgid "Daha az göster"
+msgstr "Show fewer"
+
+msgid "{} yöntem daha göster"
+msgstr "Show {} more"
 
 msgid "Kapalı"
 msgstr "Off"
