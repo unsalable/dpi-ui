@@ -309,6 +309,70 @@ mod tests {
         assert!(!blue(&mut h, 190.0), "eski satirdaki isaret kaybolmali");
     }
 
+    /// Gercek akis: dokunus ayari servise gonderir, ekran servisin onayladigi ayarla yenilenir.
+    /// Liste ayni kaldigi icin satirlar yeniden kurulmamali; isaret cizilerek gelmeli ve secili
+    /// yontemin aciklamasi yumusakca acilmali.
+    #[test]
+    fn selection_animates_after_service_confirms() {
+        let mut h = Harness::new(1.0);
+        gallery::sample(&h, EngineState::Off);
+        let confirm = |h: &Harness, provider: &str, method: &str| {
+            crate::window::config_for_test(&h.app, |c| {
+                c.isp = "turktelekom".into();
+                c.method = method.into();
+                c.dns.provider = provider.into();
+            });
+        };
+        confirm(&h, "cloudflare", "disorder");
+        h.app.set_depth(2);
+        h.app.set_sub(2);
+        h.advance(600);
+        h.frame();
+        let blue = |h: &mut Harness, y: f32| {
+            let (r, g, b) = h.pixel(366.0, y - 4.0);
+            b > 180 && r < 120 && g > 90
+        };
+        assert!(blue(&mut h, 190.0) && !blue(&mut h, 247.0));
+        confirm(&h, "google", "disorder");
+        let mut drawn_at = None;
+        for step in 0..30 {
+            h.advance(16);
+            h.frame();
+            if drawn_at.is_none() && blue(&mut h, 247.0) {
+                drawn_at = Some(step * 16 + 16);
+            }
+        }
+        let at = drawn_at.expect("yeni satirda isaret cizilmeli");
+        assert!(at >= 120, "servis onayindan sonra isaret cizilerek gelmeli, {at} ms'de tamamlandi");
+        assert!(!blue(&mut h, 190.0), "eski satirdaki isaret kaybolmali");
+
+        // Yontem: Ters sira (aciklamasi acik) -> Sahte TTL 4; Ters sira satiri bir anda degil
+        // yavasca kisalir (ikinci satirin ust kenari kademe kademe yukari kayar).
+        h.app.set_sub(1);
+        h.advance(600);
+        h.frame();
+        let row_top = |h: &mut Harness| -> f32 {
+            // Sahte TTL 4 satirinin basligi: y ekseninde ilk acik renkli nokta (x=40).
+            let mut y = 200.0;
+            while y < 300.0 {
+                let (r, _, _) = h.pixel(40.0, y);
+                if r > 150 {
+                    return y;
+                }
+                y += 1.0;
+            }
+            y
+        };
+        let before = row_top(&mut h);
+        confirm(&h, "google", "ttl4");
+        h.advance(64);
+        let mid = row_top(&mut h);
+        h.advance(600);
+        let after = row_top(&mut h);
+        assert!(after < before - 10.0, "aciklama kapaninca satir yukari kaymali ({before} -> {after})");
+        assert!(mid > after + 2.0 && mid < before - 1.0, "kayma yumusak olmali: {before} -> {mid} -> {after}");
+    }
+
     /// Alt sayfadaki bos bir yere tiklamak alttaki sayfaya (menu, ana ekran) gecmemeli.
     /// (Eski surumde "Tesekkurler" kartina tiklamak alttaki menuden "Genel"i aciyordu.)
     #[test]

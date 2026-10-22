@@ -13,7 +13,7 @@ use shared::t;
 use shared::update::{UpdateState, UpdateStatus};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, StateSnapshot};
 use slint::winit_030::{WinitWindowAccessor, winit};
-use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 use crate::client::{Client, Incoming};
 use crate::prefs::{self, Prefs};
@@ -88,6 +88,22 @@ fn upper(text: &str, en: bool) -> String {
 
 fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
     ModelRc::new(VecModel::from(items))
+}
+
+/// Listeyi yerinde gunceller: satir sayisi ayniysa yalnizca degisen satirlar yazilir, model
+/// degismez. Servis her ayar degisikliginde tum ayari yeniden gonderir; model her seferinde
+/// degisseydi satirlar bastan kurulur, secim isareti, aciklama ve anahtar gibi animasyonlar
+/// calismadan son haline atlardi.
+fn update<T: Clone + PartialEq + 'static>(current: ModelRc<T>, items: Vec<T>, set: impl FnOnce(ModelRc<T>)) {
+    if current.row_count() != items.len() {
+        set(model(items));
+        return;
+    }
+    for (i, item) in items.into_iter().enumerate() {
+        if current.row_data(i).as_ref() != Some(&item) {
+            current.set_row_data(i, item);
+        }
+    }
 }
 
 /// IPC is parcacigindan arayuze bildirim gonderir.
@@ -344,8 +360,8 @@ impl Ctx {
             .map(|i| Choice { id: s(i.id), title: s(i.label(en)), subtitle: s(i.about(en)), badge: s("") })
             .collect();
         let isp_index = presets::ISPS.iter().position(|i| i.id.eq_ignore_ascii_case(&cfg.isp)).unwrap_or(0);
-        st.set_isp_names(model(isps.iter().map(|c| c.title.clone()).collect()));
-        st.set_isps(model(isps));
+        update(st.get_isp_names(), isps.iter().map(|c| c.title.clone()).collect(), |m| st.set_isp_names(m));
+        update(st.get_isps(), isps, |m| st.set_isps(m));
         st.set_isp_index(isp_index as i32);
 
         // Yontemler: secili saglayicinin onerileri (ayri bolum), sonra digerleri, sonra ozeller.
@@ -380,9 +396,9 @@ impl Ctx {
         } else {
             upper(&t!("{} için", "For {}", isp.label(en)), en)
         };
-        st.set_methods(model(main.iter().chain(more.iter()).cloned().collect()));
-        st.set_methods_main(model(main));
-        st.set_methods_more(model(more));
+        update(st.get_methods(), main.iter().chain(more.iter()).cloned().collect(), |m| st.set_methods(m));
+        update(st.get_methods_main(), main, |m| st.set_methods_main(m));
+        update(st.get_methods_more(), more, |m| st.set_methods_more(m));
         st.set_method_header(s(header));
         st.set_method_index(method_index as i32);
         *self.method_ids.borrow_mut() = ids;
@@ -425,23 +441,22 @@ impl Ctx {
             }
         }
         let dns_index = dns_ids.iter().position(|i| i.eq_ignore_ascii_case(&cfg.dns.provider)).map_or(-1, |i| i as i32);
-        st.set_dns_providers(model(providers));
+        update(st.get_dns_providers(), providers, |m| st.set_dns_providers(m));
         st.set_dns_index(dns_index);
         *self.dns_ids.borrow_mut() = dns_ids;
-        st.set_custom_dns(model(
-            cfg.dns
-                .custom
-                .iter()
-                .map(|c| HostItem { key: s(c.id.as_str()), name: s(c.name.as_str()), note: s(custom_dns_address(c)) })
-                .collect(),
-        ));
+        update(
+            st.get_custom_dns(),
+            cfg.dns.custom.iter().map(|c| HostItem { key: s(c.id.as_str()), name: s(c.name.as_str()), note: s(custom_dns_address(c)) }).collect(),
+            |m| st.set_custom_dns(m),
+        );
         st.set_dns_fallback(cfg.dns.fallback_to_system);
         st.set_dns_skip_vpn(cfg.dns.skip_on_vpn);
 
         // Siteler.
         st.set_scope_mode(if cfg.scope.mode == engine::ScopeMode::Smart { 0 } else { 1 });
         st.set_learning(cfg.scope.learning);
-        st.set_categories(model(
+        update(
+            st.get_categories(),
             engine::scope::BUILTIN_TARGETS
                 .iter()
                 .map(|(id, _)| CategoryItem {
@@ -450,9 +465,10 @@ impl Ctx {
                     checked: cfg.scope.categories.iter().any(|c| c.eq_ignore_ascii_case(id)),
                 })
                 .collect(),
-        ));
-        st.set_targets(model(host_items(&cfg.scope.targets)));
-        st.set_excluded(model(host_items(&cfg.scope.excluded)));
+            |m| st.set_categories(m),
+        );
+        update(st.get_targets(), host_items(&cfg.scope.targets), |m| st.set_targets(m));
+        update(st.get_excluded(), host_items(&cfg.scope.excluded), |m| st.set_excluded(m));
 
         // Genel.
         st.set_start_with_windows(cfg.start_with_windows);
@@ -473,7 +489,8 @@ impl Ctx {
             .rev()
             .map(|h| HostItem { key: s(h.host.as_str()), name: s(h.host.as_str()), note: s(learn_reason(&h.reason)) })
             .collect();
-        app.global::<AppState>().set_learned(model(items));
+        let st = app.global::<AppState>();
+        update(st.get_learned(), items, |m| st.set_learned(m));
     }
 
     /// Dili uygular: Slint ekranlari (`@tr`) ve Rust'in urettigi metinler birlikte degisir.
