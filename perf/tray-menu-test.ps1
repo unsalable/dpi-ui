@@ -56,9 +56,11 @@ try {
     Start-Sleep -Milliseconds 300
     Shot $menu "tray-menu-live.png"
 
-    # Uzerine gelme: "Uygulamayi ac" satiri (mantiksal y = 136).
-    [void][W32M]::PostMessage($menu, 0x0200, [IntPtr]::Zero, (LParam ([int](130 * $s)) ([int](136 * $s))))
-    Start-Sleep -Milliseconds 250
+    # Secili satir: asagi ok iki kez -> "Uygulamayi ac" (fare menude olmadigi icin fareyle
+    # gelinen vurguyu Windows'un "fare cikti" iletisi hemen siler). Vurgu yavasca belirir.
+    [void][W32M]::PostMessage($menu, 0x0100, [IntPtr]0x28, [IntPtr]::Zero)
+    [void][W32M]::PostMessage($menu, 0x0100, [IntPtr]0x28, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 350
     Shot $menu "tray-menu-live-hover.png"
 
     # Esc menuyu kapatir, tepsi calismaya devam eder.
@@ -76,7 +78,7 @@ $tray = Start-Process -FilePath $Exe -ArgumentList "--tray" -PassThru
 try {
     $menu = Find-Menu
     $s = [W32M]::GetDpiForWindow($menu) / 96.0
-    $lp = LParam ([int](130 * $s)) ([int](172 * $s))
+    $lp = LParam ([int](130 * $s)) ([int](148 * $s))
     [void][W32M]::PostMessage($menu, 0x0200, [IntPtr]::Zero, $lp)
     [void][W32M]::PostMessage($menu, 0x0202, [IntPtr]::Zero, $lp)
     Check "Cik tepsiyi kapatti" ($tray.WaitForExit(3000))

@@ -1073,15 +1073,16 @@ mod tray_menu {
         View { connected, state, method: "Ters sıra".into(), dns: "Cloudflare".into(), message: None }
     }
 
-    /// Satirlar dogru eylemlere gider; hizmet yoksa ilk satir hizmeti baslatir.
+    /// Ust bolum baglanir/keser (hizmet yoksa hizmeti baslatir), satirlar acar ve cikar.
     #[test]
     fn rows_map_to_actions() {
         let on = view(true, EngineState::On);
-        assert_eq!(traymenu::hit_for_test(130.0, 90.0), Some(0));
-        assert_eq!(traymenu::hit_for_test(130.0, 135.0), Some(1));
-        assert_eq!(traymenu::hit_for_test(130.0, 170.0), Some(2));
-        assert_eq!(traymenu::hit_for_test(130.0, 30.0), None, "ust bilgi alani tiklanmaz");
-        assert_eq!(traymenu::hit_for_test(130.0, 113.0), None, "ayirici tiklanmaz");
+        assert_eq!(traymenu::hit_for_test(40.0, 40.0), Some(0), "simge tiklanir");
+        assert_eq!(traymenu::hit_for_test(250.0, 40.0), Some(0), "anahtar tiklanir");
+        assert_eq!(traymenu::hit_for_test(130.0, 100.0), Some(1));
+        assert_eq!(traymenu::hit_for_test(130.0, 150.0), Some(2));
+        assert_eq!(traymenu::hit_for_test(130.0, 79.0), None, "bolumler arasi bosluk tiklanmaz");
+        assert_eq!(traymenu::hit_for_test(3.0, 100.0), None, "kenar tiklanmaz");
         assert_eq!(traymenu::action_for_test(0, &on), Action::Toggle);
         assert_eq!(traymenu::action_for_test(1, &on), Action::Open);
         assert_eq!(traymenu::action_for_test(2, &on), Action::Quit);
@@ -1124,6 +1125,35 @@ mod tray_menu {
             let name = format!("tray-menu-{}x.png", scale as u32);
             std::fs::write(std::path::Path::new(&dir).join(name), super::png(tw as u32, th as u32, &img)).unwrap();
         }
+    }
+
+    /// Simge gecisleri kare kare (GDPI3_SHOTS): kapali -> baglaniyor -> bagli, 2x, ust bolum.
+    #[test]
+    fn menu_transition_shots() {
+        let Some(dir) = std::env::var_os("GDPI3_SHOTS") else { return };
+        let (off, busy, on) = (view(true, EngineState::Off), view(true, EngineState::Starting), view(true, EngineState::On));
+        let mut frames = Vec::new();
+        let (mut fw, mut ch) = (0, 0);
+        let steps = [0.0f32, 0.15, 0.3, 0.5, 0.75, 1.0];
+        for (to, from, spin0) in [(&busy, &off, 0.0f32), (&on, &busy, 60.0)] {
+            for (k, &t) in steps.iter().enumerate() {
+                let (w, h, bgra) = traymenu::render_transition_for_test(to, from, t, spin0 + 25.0 * k as f32, true, 2.0);
+                (fw, ch) = (w, (h * 160 / 356).min(h));
+                frames.push(bgra.chunks_exact(4).take(w * ch).flat_map(|p| [p[2], p[1], p[0]]).collect::<Vec<u8>>());
+            }
+        }
+        let tw = fw * steps.len();
+        let th = ch * 2;
+        let mut img = vec![0u8; tw * th * 3];
+        for (k, f) in frames.iter().enumerate() {
+            let (cx, cy) = ((k % steps.len()) * fw, (k / steps.len()) * ch);
+            for y in 0..ch {
+                let d = ((cy + y) * tw + cx) * 3;
+                img[d..d + fw * 3].copy_from_slice(&f[y * fw * 3..(y + 1) * fw * 3]);
+            }
+        }
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(std::path::Path::new(&dir).join("tray-menu-transition.png"), super::png(tw as u32, th as u32, &img)).unwrap();
     }
 }
 
