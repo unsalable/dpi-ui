@@ -25,6 +25,19 @@ sıfırdan, Rust ile yazıldı; kendi DPI motorunu kullanır.
 `DPI-UI-Setup.exe` dosyasını indirip çalıştırın. Kurulum yönetici izni ister (WinDivert
 sürücüsü ve motor hizmeti için); sonrasında uygulama normal kullanıcı olarak çalışır.
 
+### Mac
+
+[Releases](https://github.com/unsalable/dpi-ui/releases) sayfasından `DPI-UI-Mac.dmg` dosyasını
+indirin, DPI UI'yi Uygulamalar'a sürükleyin. Apple Silicon ve Intel, macOS 11+. İlk açılışta macOS
+"doğrulanamadı" derse: Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç** (bir kez). Ayrıntılı
+kurulum notu: [installer/mac/RELEASE_NOTES.md](installer/mac/RELEASE_NOTES.md).
+
+Mac'te paket sürücüsü (WinDivert) olmadığı için motor farklıdır: uygulama yerel bir proxy açar,
+sistem proxy ayarını (PAC) yalnızca listedeki siteler için ona yönlendirir ve siteye giden ilk
+mesajı böler (TLS kaydı bölme, ters sıra). Yönetici şifresi gerekmez; bağlantı kesilince ayar eski
+hâline döner. Hangi yöntemin çalıştığı Ayarlar → Bağlantı yöntemi → **En iyi yöntemi bul** ile o
+hatta denenir. Paket ve testler GitHub'ın Mac makinelerinde üretilir (`.github/workflows/mac.yml`).
+
 ## Güncellemeler nasıl çalışır
 
 Motor hizmeti Windows açılınca, oturum açılınca, uygulama açılınca ve altı saatte bir bu deponun
