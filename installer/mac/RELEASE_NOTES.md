@@ -2,15 +2,22 @@
 
 Apple Silicon (M1–M4) ve Intel Mac'lerde çalışır; macOS 11 ve sonrası.
 
-### Kurulum
+### Kurulum (önerilen: tek komut, uyarısız)
+**Terminal**'i aç (Spotlight'ta "Terminal" yaz), şu satırı yapıştırıp Enter'a bas:
+
+```
+curl -fsSL https://raw.githubusercontent.com/unsalable/dpi-ui/main/installer/mac/install.sh | bash
+```
+
+Komut en yeni sürümü GitHub'dan indirir, özetini doğrular, Uygulamalar klasörüne kurar ve açar. macOS'un "doğrulanamadı" uyarısı çıkmaz, Gizlilik ve Güvenlik'te bir şeye basman gerekmez. Bu uyarıyı macOS yalnızca tarayıcıyla indirilen dosyalarda gösterir; Terminal'den inen dosyada göstermez.
+
+### Kurulum (disk görüntüsüyle)
 1. Aşağıdan **DPI-UI-Mac.dmg** dosyasını indir ve aç.
 2. **DPI UI** simgesini **Uygulamalar** klasörüne sürükle.
-3. Uygulamalar'dan DPI UI'yi aç. İlk açılışta macOS "doğrulanamadı" der (uygulama Apple'a ücretli geliştirici hesabıyla kayıtlı değil):
+3. Uygulamalar'dan DPI UI'yi aç. Tarayıcıyla indirildiği için ilk açılışta macOS "doğrulanamadı" der (uygulama Apple'ın ücretli geliştirici programına kayıtlı değil):
    - **Tamam**'a bas.
    - **Sistem Ayarları → Gizlilik ve Güvenlik**'i aç, en altta "DPI UI engellendi" satırındaki **Yine de Aç**'a bas, şifreni ya da Touch ID'ni gir.
    - Bu yalnızca bir kez gerekir.
-
-   Terminal'i tercih edersen aynı işi şu komut yapar: `xattr -dr com.apple.quarantine "/Applications/DPI UI.app"`
 
 ### Kullanım
 - Uygulama açılınca kendiliğinden bağlanır; sağ üstte menü çubuğunda dünya simgesi görünür. Bağlıyken simge koyu, kapalıyken soluktur.

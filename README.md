@@ -27,10 +27,18 @@ sürücüsü ve motor hizmeti için); sonrasında uygulama normal kullanıcı ol
 
 ### Mac
 
-[Releases](https://github.com/unsalable/dpi-ui/releases) sayfasından `DPI-UI-Mac.dmg` dosyasını
-indirin, DPI UI'yi Uygulamalar'a sürükleyin. Apple Silicon ve Intel, macOS 11+. İlk açılışta macOS
-"doğrulanamadı" derse: Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç** (bir kez). Ayrıntılı
-kurulum notu: [installer/mac/RELEASE_NOTES.md](installer/mac/RELEASE_NOTES.md).
+Terminal'de tek komut (Apple Silicon ve Intel, macOS 11+):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/unsalable/dpi-ui/main/installer/mac/install.sh | bash
+```
+
+En yeni Mac paketini indirir, SHA-256'sını yayındaki manifestle karşılaştırır, Uygulamalar'a kurar
+ve açar. Tarayıcıyla indirilmediği için macOS'un "doğrulanamadı" uyarısı çıkmaz (ücretli Apple
+geliştirici imzası olmadan uyarıyı kaldırmanın yolu bu). Alternatif:
+[Releases](https://github.com/unsalable/dpi-ui/releases) sayfasındaki `DPI-UI-Mac.dmg`; o zaman ilk
+açılışta Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç** bir kez gerekir. Ayrıntılı kurulum
+notu: [installer/mac/RELEASE_NOTES.md](installer/mac/RELEASE_NOTES.md).
 
 Mac'te paket sürücüsü (WinDivert) olmadığı için motor farklıdır: uygulama yerel bir proxy açar,
 sistem proxy ayarını (PAC) yalnızca listedeki siteler için ona yönlendirir ve siteye giden ilk
