@@ -1,6 +1,6 @@
 //! Gelistirme araci: proxy motorunu tek basina calistirir (Windows'ta canli deneme icin).
 //!
-//!   dpi-proxy [--port 47813] [--method disorder|none|...] [--dns <url>|system] [--bootstrap ip,ip] [--verbose]
+//!   dpi-proxy [--port 47813] [--method disorder|none|...] [--dns <url>|system] [--bootstrap ip,ip] [--pac smart|all] [--verbose]
 //!   dpi-proxy --methods
 //!
 //! Baska bir terminalden: `curl.exe -x http://127.0.0.1:47813 https://discord.com/`
@@ -19,6 +19,7 @@ fn main() {
     let mut dns = DEFAULT_DOH.to_owned();
     let mut bootstrap = DEFAULT_BOOTSTRAP.to_owned();
     let mut verbose = false;
+    let mut pac: Option<String> = None;
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -29,6 +30,8 @@ fn main() {
             "--dns" => dns = value(),
             "--bootstrap" => bootstrap = value(),
             "--verbose" => verbose = true,
+            // /proxy.pac: akilli liste (hazir engelli siteler) ya da her site.
+            "--pac" => pac = Some(value()),
             "--methods" => {
                 for m in presets::METHODS {
                     println!("{:<16} {} — {}", m.id, m.name, m.description);
@@ -60,6 +63,14 @@ fn main() {
         }));
     }
     let proxy = Proxy::start(opts).unwrap_or_else(|e| fail(&format!("dinlenemedi: {e}")));
+    if let Some(mode) = pac {
+        let scope = proxy::pac::PacScope {
+            all: mode == "all",
+            targets: engine::scope::builtin_targets(&[]).map(str::to_owned).collect(),
+            exclude: Vec::new(),
+        };
+        proxy.set_pac(Some(proxy::pac::script(proxy.local_addr(), &scope)));
+    }
     println!("dinleniyor {} · yöntem: {method} · DNS: {dns}", proxy.local_addr());
     loop {
         std::thread::park();

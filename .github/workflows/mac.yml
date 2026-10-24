@@ -38,3 +38,20 @@ jobs:
         with:
           name: proxy-smoke-${{ matrix.os }}
           path: perf/out/proxy-smoke
+
+  # Sistem proxy'si (PAC), URLSession ve ekran goruntusu: gercek macOS entegrasyonu.
+  sistem:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Sistem entegrasyonu
+        run: |
+          cargo build --release -p proxy --bin dpi-proxy
+          bash perf/mac-system-test.sh target/release/dpi-proxy perf/out/mac-system
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-system
+          path: perf/out/mac-system
