@@ -16,7 +16,7 @@ use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 use crate::iconart::{self, Mark};
-use crate::{AppWindow, PowerState};
+use crate::PowerState;
 
 /// Yerli pencere cubugu: baslik gizli, cubuk seffaf, icerik pencerenin tamamini kaplar
 /// (arayuz ustte 28 px pay birakir). Slint penceresi olusmadan secilmeli.
@@ -75,8 +75,7 @@ fn build_menubar() {
     }
     let Ok(tray) = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_icon(tray_icon(PowerState::Off).expect("simge"))
-        .with_icon_as_template(true)
+        .with_icon_templated(tray_icon(PowerState::Off).expect("simge"))
         .with_tooltip("DPI UI")
         .build()
     else {
@@ -122,8 +121,7 @@ pub fn show_state(power: PowerState, title: &str) {
         bar.quit.set_text(if en { "Quit DPI UI" } else { "DPI UI'den çık" });
         let solid = matches!(power, PowerState::On);
         if bar.shown.map(|p| matches!(p, PowerState::On)) != Some(solid) {
-            let _ = bar.tray.set_icon(tray_icon(power));
-            bar.tray.set_icon_as_template(true);
+            let _ = bar.tray.set_icon_templated(tray_icon(power));
             bar.shown = Some(power);
         }
         let _ = bar.tray.set_tooltip(Some(format!("DPI UI · {title}")));

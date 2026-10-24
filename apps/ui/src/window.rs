@@ -13,7 +13,9 @@ use shared::t;
 use shared::update::{UpdateState, UpdateStatus};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, StateSnapshot};
 use slint::winit_030::{WinitWindowAccessor, winit};
-use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, VecModel};
+#[cfg(windows)]
+use slint::TimerMode;
 
 use crate::client::{Client, Incoming};
 use crate::prefs::{self, Prefs};

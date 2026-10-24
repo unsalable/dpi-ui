@@ -100,7 +100,7 @@ pub fn repair_autorun(on: bool) {
     let Some(file) = agent_file() else { return };
     let current = std::fs::read_to_string(&file).ok();
     match (on, current) {
-        (true, Some(text)) if Some(text) == agent_plist() => {}
+        (true, Some(text)) if agent_plist().as_deref() == Some(text.as_str()) => {}
         (true, _) => {
             set_autorun(true);
         }

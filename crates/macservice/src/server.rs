@@ -14,7 +14,6 @@ use std::thread::JoinHandle;
 use shared::ipc::{self, ClientMessage, ServerMessage};
 
 use crate::controller::Controller;
-use crate::warn;
 
 const MAX_CLIENTS: usize = 8;
 static NEXT_CLIENT: AtomicU64 = AtomicU64::new(1);
