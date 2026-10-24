@@ -1,0 +1,23 @@
+name: Roblox denemesi
+
+# Gecici olcum: Roblox (Mac) hangi proxy ayarina uyuyor? Yalnizca roblox-deneme dalinda calisir.
+on:
+  push:
+    branches: [roblox-deneme]
+
+jobs:
+  roblox:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Olcum
+        run: |
+          cargo build --release -p proxy --bin dpi-proxy
+          bash perf/roblox-probe.sh target/release/dpi-proxy perf/out/roblox
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roblox
+          path: perf/out/roblox
