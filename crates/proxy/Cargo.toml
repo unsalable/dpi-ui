@@ -1,0 +1,22 @@
+[package]
+name = "proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Mac motoru: yerel HTTP/SOCKS5 proxy, siteye giden ilk mesaji bolup sirasini karistirir; Windows'ta da calisir (canli deneme)"
+
+[features]
+default = ["doh"]
+# Adlari sifreli DNS ile coz (dnsclient). Kapaliyken yalnizca sistem DNS'i.
+doh = ["dep:dnsclient"]
+
+[dependencies]
+engine = { path = "../engine" }
+serde = { version = "1", features = ["derive"] }
+dnsclient = { path = "../dnsclient", optional = true }
+socket2 = { version = "0.6.5", features = ["all"] }
+
+[[bin]]
+name = "dpi-proxy"
+path = "src/bin/dpi-proxy.rs"
+required-features = ["doh"]

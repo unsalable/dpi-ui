@@ -122,6 +122,46 @@ pub fn min_answer_ttl(msg: &[u8]) -> Option<u32> {
     min
 }
 
+/// Tek soruluk, ozyinelemeli (RD) sorgu; kimlik 0 (DoH icin onerilen).
+pub fn build_query(name: &str, qtype: u16) -> Vec<u8> {
+    let mut m = vec![0, 0, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0];
+    for label in name.trim_end_matches('.').split('.').filter(|l| !l.is_empty()) {
+        let label = &label.as_bytes()[..label.len().min(63)];
+        m.push(label.len() as u8);
+        m.extend_from_slice(label);
+    }
+    m.push(0);
+    m.extend_from_slice(&qtype.to_be_bytes());
+    m.extend_from_slice(&1u16.to_be_bytes());
+    m
+}
+
+/// Yanittaki A ve AAAA adresleri (CNAME zinciri atlanir), yanittaki sirayla.
+pub fn answer_addrs(msg: &[u8]) -> Vec<std::net::IpAddr> {
+    let mut out = Vec::new();
+    let (Some(qd), Some(an)) = (be16(msg, 4), be16(msg, 6)) else { return out };
+    let mut pos = 12;
+    for _ in 0..qd {
+        let Some((_, after)) = read_name(msg, pos) else { return out };
+        pos = after + 4;
+    }
+    for _ in 0..an {
+        let Some((_, after)) = read_name(msg, pos) else { return out };
+        let (Some(rtype), Some(class), Some(rdlen)) = (be16(msg, after), be16(msg, after + 2), be16(msg, after + 8)) else {
+            return out;
+        };
+        let data = after + 10;
+        let Some(rdata) = msg.get(data..data + rdlen as usize) else { return out };
+        match (rtype, class, rdata.len()) {
+            (1, 1, 4) => out.push(std::net::IpAddr::from(<[u8; 4]>::try_from(rdata).unwrap())),
+            (28, 1, 16) => out.push(std::net::IpAddr::from(<[u8; 16]>::try_from(rdata).unwrap())),
+            _ => {}
+        }
+        pos = data + rdlen as usize;
+    }
+    out
+}
+
 pub fn set_id(msg: &mut [u8], id: u16) {
     if msg.len() >= 2 {
         msg[..2].copy_from_slice(&id.to_be_bytes());
@@ -184,7 +224,7 @@ pub fn is_local_name(name: &str) -> bool {
     false
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-helpers"))]
 pub mod tests {
     use super::*;
 
@@ -240,6 +280,32 @@ pub mod tests {
         assert_eq!(min_answer_ttl(&a), Some(60));
         assert_eq!(rcode(&a), Some(0));
         assert_eq!(min_answer_ttl(&answer(&q, &[])), None);
+    }
+
+    #[test]
+    fn built_query_parses_back() {
+        let q = build_query("Discord.com.", 28);
+        let p = parse_query(&q).unwrap();
+        assert_eq!((p.id, p.name.as_str(), p.qtype, p.qclass), (0, "discord.com", 28, 1));
+    }
+
+    #[test]
+    fn reads_answer_addresses_skipping_cname() {
+        let q = query("discord.com", 1, None);
+        let a = answer(&q, &[300, 60]);
+        let ips: Vec<String> = answer_addrs(&a).iter().map(|i| i.to_string()).collect();
+        assert_eq!(ips, ["104.16.0.0", "104.16.0.1"]);
+
+        // CNAME (rdata: isaretci) + AAAA.
+        let (_, qend) = read_name(&q, 12).unwrap();
+        let mut r = q[..qend + 4].to_vec();
+        r[2] = 0x81;
+        r[6..8].copy_from_slice(&2u16.to_be_bytes());
+        r.extend_from_slice(&[0xC0, 12, 0, 5, 0, 1, 0, 0, 0, 60, 0, 2, 0xC0, 12]);
+        r.extend_from_slice(&[0xC0, 12, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+        r.extend_from_slice(&[0x26, 0x06, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]);
+        assert_eq!(answer_addrs(&r), ["2606:4700::1111".parse::<std::net::IpAddr>().unwrap()]);
+        assert!(answer_addrs(&r[..r.len() - 3]).is_empty(), "kesik kayit atlanir");
     }
 
     #[test]

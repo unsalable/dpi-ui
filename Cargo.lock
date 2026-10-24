@@ -810,6 +810,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dnsclient"
+version = "3.1.2"
+dependencies = [
+ "rustls",
+ "webpki-roots",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1388,6 +1396,7 @@ dependencies = [
 name = "goodbyedpi3-service"
 version = "3.1.2"
 dependencies = [
+ "dnsclient",
  "engine",
  "ring",
  "rustls",
@@ -3222,6 +3231,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
+name = "proxy"
+version = "3.1.2"
+dependencies = [
+ "dnsclient",
+ "engine",
+ "serde",
+ "socket2",
+]
+
+[[package]]
 name = "pulldown-cmark"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3910,6 +3929,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

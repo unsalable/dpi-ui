@@ -9,6 +9,7 @@ name = "GoodbyeDPI3-Service"
 path = "src/main.rs"
 
 [dependencies]
+dnsclient = { path = "../../crates/dnsclient" }
 engine = { path = "../../crates/engine" }
 shared = { path = "../../crates/shared" }
 windivert = { path = "../../crates/windivert" }
@@ -36,3 +37,6 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
 ] }
+
+[dev-dependencies]
+dnsclient = { path = "../../crates/dnsclient", features = ["test-helpers"] }

@@ -1,0 +1,31 @@
+name: Mac
+
+on:
+  push:
+    branches: [main, mac-surumu]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  motor:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Apple Silicon ve Intel Mac.
+        os: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Testler (proxy motoru, sifreli DNS)
+        run: cargo test -p proxy -p dnsclient
+      - name: Gercek agda deneme
+        run: |
+          cargo build --release -p proxy --bin dpi-proxy
+          bash perf/proxy-smoke.sh target/release/dpi-proxy perf/out/proxy-smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: proxy-smoke-${{ matrix.os }}
+          path: perf/out/proxy-smoke
