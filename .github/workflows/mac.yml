@@ -18,8 +18,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # Basarisiz testlerin ozeti uyari (annotation) olarak da yazilir: gunlugu okumak
+      # oturum ister, uyarilar herkese acik API'den okunur.
       - name: Testler (proxy motoru, sifreli DNS)
-        run: cargo test -p proxy -p dnsclient
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! cargo test -p proxy -p dnsclient 2>&1 | tee test.log; then
+            { sed -n '/^failures:$/,/^test result/p' test.log; grep -E -A8 '^error(\[|:)' test.log; } | head -80 > fail.txt
+            echo "::error title=Testler basarisiz::$(sed -e 's/%/%25/g' -e 's/\r//g' fail.txt | awk 'BEGIN { ORS = "%0A" } { print }')"
+            exit 1
+          fi
       - name: Gercek agda deneme
         run: |
           cargo build --release -p proxy --bin dpi-proxy
