@@ -1,0 +1,19 @@
+name: Guncelleme denemesi
+
+# Gecici: v3.1.2-mac.3 kurulu Mac'in yayindaki 3.1.3'e kendiliginden gecisi.
+on:
+  push:
+    branches: [guncelleme-deneme]
+
+jobs:
+  guncelleme:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Uctan uca guncelleme
+        run: bash perf/mac-update-e2e.sh v3.1.2-mac.3 3.1.3 perf/out/mac-update
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-update
+          path: perf/out/mac-update
