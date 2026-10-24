@@ -38,6 +38,12 @@ mesajı böler (TLS kaydı bölme, ters sıra). Yönetici şifresi gerekmez; ba�
 hâline döner. Hangi yöntemin çalıştığı Ayarlar → Bağlantı yöntemi → **En iyi yöntemi bul** ile o
 hatta denenir. Paket ve testler GitHub'ın Mac makinelerinde üretilir (`.github/workflows/mac.yml`).
 
+Mac'te güncellemeler de Windows'taki imza zinciriyle gelir: yayına `DPI-UI-Mac.zip` ve imzalı
+`update-mac.json` eklenir; uygulama paketi yalnızca imza ve SHA-256 tutarsa indirir, kendi
+kapanınca yeni `DPI UI.app`'i eskisinin yerine koyar ve yeniden açılır (yönetici şifresi
+gerekmez). `release.ps1` yayından sonra Mac paketini bekleyip yerel anahtarla imzalar
+(`release-mac.ps1`).
+
 ## Güncellemeler nasıl çalışır
 
 Motor hizmeti Windows açılınca, oturum açılınca, uygulama açılınca ve altı saatte bir bu deponun

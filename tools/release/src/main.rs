@@ -8,6 +8,9 @@
 //!       paketi eski adla (GoodbyeDPI-UI-3-Setup.exe) gosterir; 3.0.0-alpha.1 de guncellenebilsin.
 //!   release-tool verify <klasor>
 //!       Klasordeki update.json + imza + kurulum dosyasini uygulamanin gomulu anahtariyla dogrular.
+//!   release-tool sign-mac <anahtar.pk8> <DPI-UI-Mac.zip> <surum> <cikti-klasoru>
+//!       Mac paketi icin update-mac.json ve update-mac.json.sig (ayni anahtar, ayni bicim).
+//!   release-tool verify-mac <klasor>
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +26,9 @@ fn main() {
             sign(Path::new(&args[1]), Path::new(&args[2]), &args[3], Path::new(&args[4]), args.len() == 6)
         }
         Some("verify") if args.len() == 2 => verify(Path::new(&args[1]), &update::PUBLIC_KEY),
-        _ => Err("kullanım: release-tool keygen <anahtar> | sign <anahtar> <kurulum.exe> <sürüm> <klasör> | verify <klasör>".into()),
+        Some("sign-mac") if args.len() == 5 => sign_mac(Path::new(&args[1]), Path::new(&args[2]), &args[3], Path::new(&args[4])),
+        Some("verify-mac") if args.len() == 2 => verify_mac(Path::new(&args[1]), &update::PUBLIC_KEY),
+        _ => Err("kullanım: release-tool keygen <anahtar> | sign <anahtar> <kurulum.exe> <sürüm> <klasör> | verify <klasör> | sign-mac <anahtar> <DPI-UI-Mac.zip> <sürüm> <klasör> | verify-mac <klasör>".into()),
     };
     if let Err(e) = result {
         eprintln!("hata: {e}");
@@ -71,6 +76,49 @@ fn sign(key: &Path, installer: &Path, version: &str, out: &Path, legacy: bool) -
     std::fs::write(out.join(update::SIGNATURE_NAME), update::to_hex(sig.as_ref())).map_err(|e| e.to_string())?;
     println!("İmzalandı: {} {} bayt, SHA-256 {}", manifest.version, manifest.size, manifest.sha256);
     verify(out, &update::PUBLIC_KEY)
+}
+
+/// Mac paketi: ayni anahtar ve manifest bicimi, kendi dosya adlari.
+fn sign_mac(key: &Path, package: &Path, version: &str, out: &Path) -> Result<(), String> {
+    let v = Version::parse(version).ok_or("sürüm biçimi geçersiz (örn. 3.2.0)")?;
+    let pkcs8 = std::fs::read(key).map_err(|e| format!("{}: {e}", key.display()))?;
+    let pair = Ed25519KeyPair::from_pkcs8(&pkcs8).map_err(|_| "özel anahtar geçersiz")?;
+    if pair.public_key().as_ref() != update::PUBLIC_KEY {
+        return Err("bu anahtar uygulamaya gömülü açık anahtarla eşleşmiyor".into());
+    }
+    let (sha256, size) = sha256_file(package)?;
+    let manifest = Manifest { version: v.to_string(), file: update::MAC_PACKAGE_NAME.into(), size, sha256 };
+    manifest.check_mac(&v)?;
+    let json = serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?;
+    let sig = pair.sign(&json);
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    std::fs::write(out.join(update::MAC_MANIFEST_NAME), &json).map_err(|e| e.to_string())?;
+    std::fs::write(out.join(update::MAC_SIGNATURE_NAME), update::to_hex(sig.as_ref())).map_err(|e| e.to_string())?;
+    println!("Mac paketi imzalandı: {} {} bayt, SHA-256 {}", manifest.version, manifest.size, manifest.sha256);
+    verify_mac(out, &update::PUBLIC_KEY)
+}
+
+/// Mac uygulamasinin yapacagi dogrulamanin aynisi.
+fn verify_mac(dir: &Path, public_key: &[u8; 32]) -> Result<(), String> {
+    let read = |name: &str| -> Result<Vec<u8>, String> {
+        let p: PathBuf = dir.join(name);
+        std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))
+    };
+    let json = read(update::MAC_MANIFEST_NAME)?;
+    let sig = update::from_hex(&String::from_utf8_lossy(&read(update::MAC_SIGNATURE_NAME)?)).ok_or("imza onaltılık değil")?;
+    UnparsedPublicKey::new(&ED25519, public_key).verify(&json, &sig).map_err(|_| "imza geçersiz")?;
+    let m: Manifest = serde_json::from_slice(&json).map_err(|e| e.to_string())?;
+    let v = Version::parse(&m.version).ok_or("manifest sürümü geçersiz")?;
+    m.check_mac(&v)?;
+    let package = dir.join(&m.file);
+    if package.exists() {
+        let (sha, size) = sha256_file(&package)?;
+        if sha != m.sha256 || size != m.size {
+            return Err("Mac paketi manifestle eşleşmiyor".into());
+        }
+    }
+    println!("Doğrulandı (Mac): {} ({})", m.version, if package.exists() { "paket eşleşti" } else { "paket klasörde yok" });
+    Ok(())
 }
 
 /// Uygulamanin yapacagi dogrulamanin aynisi (yayindan once son kontrol).

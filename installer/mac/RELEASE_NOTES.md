@@ -17,6 +17,9 @@ Apple Silicon (M1–M4) ve Intel Mac'lerde çalışır; macOS 11 ve sonrası.
 - Bir site açılmazsa: **Ayarlar → Bağlantı yöntemi → En iyi yöntemi bul**. Uygulama engelli siteleri her yöntemle dener ve açanı seçer.
 - Pencereyi kapatınca uygulama menü çubuğunda çalışmaya devam eder. Tamamen kapatmak için menü çubuğundaki simgeden **DPI UI'den çık**.
 
+### Güncellemeler
+Uygulama yeni sürümleri bu sayfadan kendisi indirir, imzasını doğrular ve kurar. Kurulum sırasında birkaç saniye kapanıp yeniden açılır, sen bir şey yapmazsın. Ayarlar → Genel → **Güncellemeleri otomatik yükle** kapatılırsa yeni sürüm Hakkında sayfasından tek tıkla kurulur.
+
 ### Nasıl çalışır
 Mac'te Windows sürümündeki paket sürücüsünün (WinDivert) karşılığı yok. Bu yüzden uygulama bilgisayarda yerel bir proxy açar ve sistem proxy ayarını yalnızca engelli siteler için ona yönlendirir. Diğer siteler doğrudan gider. Bağlantıyı kesince ya da uygulamadan çıkınca ayar eski hâline döner. Yönetici şifresi gerekmez.
 

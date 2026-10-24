@@ -9,6 +9,10 @@
 #   -DryRun : GitHub'a hicbir sey gondermez, yalnizca paketi uretir ve imzalar
 #   -Legacy : paketi eski adla (GoodbyeDPI-UI-3-Setup.exe) da yukler ve manifest o adi gosterir;
 #             3.0.0-alpha.1 kurulumlari da guncellemeyi bulsun diye (gecis surumu icin)
+#   -NoMac  : Mac paketini bekleyip imzalamaz (sonra release-mac.ps1 -Tag vX ile yapilabilir)
+#
+# Yayin yayimlaninca GitHub'in Mac makinesi Mac paketini derleyip yayina ekler (mac-release.yml);
+# betik sonunda onu bekler ve yerel anahtarla imzalar (release-mac.ps1, ~10 dk).
 #
 # Imza anahtari varsayilan olarak %USERPROFILE%\.dpi-ui\release-signing.pk8 (depoda DEGIL).
 # Not: dosya bilerek yalnizca ASCII karakter icerir.
@@ -18,7 +22,8 @@ param(
     [string] $Key = "$env:USERPROFILE\.dpi-ui\release-signing.pk8",
     [switch] $Bump,
     [switch] $DryRun,
-    [switch] $Legacy
+    [switch] $Legacy,
+    [switch] $NoMac
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,3 +82,9 @@ if ($Version.Contains("-")) { $ghArgs += "--prerelease" }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "GitHub surumu olusturulamadi" }
 Write-Host "Yayinlandi: https://github.com/unsalable/dpi-ui/releases/tag/$tag"
+
+if (-not $NoMac -and (Test-Path "$PSScriptRoot\.github\workflows\mac-release.yml")) {
+    Write-Host "Mac paketi bekleniyor ve imzalanacak (yaklasik 10 dk; -NoMac ile atlanir)..."
+    powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\release-mac.ps1" -Tag $tag -Key $Key
+    if ($LASTEXITCODE -ne 0) { Write-Host "UYARI: Mac paketi imzalanamadi; sonra: release-mac.ps1 -Tag $tag" }
+}

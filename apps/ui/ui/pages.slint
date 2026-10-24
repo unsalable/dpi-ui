@@ -816,7 +816,7 @@ export component GeneralPage inherits SubPage {
         ToggleRow {
             first: true;
             last: true;
-            title: AppState.mac ? @tr("Güncellemeleri otomatik denetle") : @tr("Güncellemeleri otomatik yükle");
+            title: @tr("Güncellemeleri otomatik yükle");
             checked: AppState.auto-update;
             toggled(v) => {
                 AppState.set-auto-update(v);

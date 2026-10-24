@@ -58,6 +58,17 @@ pub fn start() -> std::io::Result<Service> {
     if auto_connect {
         let _ = ctrl.connect();
     }
+    // Saatte bir bakar; denetim en sik 6 saatte bir aga cikar (arayuz acilinca da denetler).
+    let weak = Arc::downgrade(&ctrl);
+    std::thread::Builder::new().name("guncelleme".into()).stack_size(128 * 1024).spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(3600));
+            match weak.upgrade() {
+                Some(c) => c.check_update(false),
+                None => return,
+            }
+        }
+    })?;
     Ok(Service {
         ctrl,
         #[cfg(unix)]

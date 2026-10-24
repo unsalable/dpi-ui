@@ -5,6 +5,8 @@ name: Mac yayini
 #   Windows guncelleyicisi on surumleri ve Windows dosyasi olmayan yayinlari hic gormez; Mac
 #   guncelleyicisi de kararli surumdeyken on surum onermez.
 # - Bir yayin yayimlaninca (release.ps1) Mac paketi o yayina da eklenir.
+# Imza anahtari GitHub'da degil: paketin imzali manifestini (update-mac.json) yayin yapan
+# bilgisayar release-mac.ps1 ile ekler; uygulama ancak ondan sonra kendiliginden kurar.
 on:
   push:
     tags: ["v*-mac.*"]
@@ -33,4 +35,4 @@ jobs:
             gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
               --title "DPI UI ${TAG#v} (Mac)" --notes-file installer/mac/RELEASE_NOTES.md
           fi
-          gh release upload "$TAG" build/DPI-UI-Mac.dmg --clobber
+          gh release upload "$TAG" build/DPI-UI-Mac.dmg build/DPI-UI-Mac.zip --clobber

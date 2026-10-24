@@ -43,7 +43,12 @@ struct Inner {
     pac_version: u64,
     subscribers: Vec<(u64, SyncSender<ServerMessage>)>,
     update: UpdateStatus,
+    /// Elle kurulum icin disk goruntusu (imzali paket yoksa).
     update_url: Option<String>,
+    /// Indirilip imzasi dogrulanmis paket.
+    prepared: Option<updates::Prepared>,
+    /// Denetim ya da indirme suruyor.
+    update_busy: bool,
 }
 
 fn now_ms() -> u64 {
@@ -102,6 +107,8 @@ impl Controller {
                 subscribers: Vec::new(),
                 update: UpdateStatus::default(),
                 update_url: None,
+                prepared: None,
+                update_busy: false,
             }),
             me: me.clone(),
             data_dir,
@@ -165,13 +172,9 @@ impl Controller {
                 self.check_update(forced);
                 Response::Ok
             }
-            Request::InstallUpdate => match self.inner.lock().unwrap().update_url.clone() {
-                Some(url) => {
-                    // Kurulum paketi tarayicida iner; kullanici uygulamayi Uygulamalar'a surukler.
-                    let _ = std::process::Command::new("/usr/bin/open").arg(url).spawn();
-                    Response::Ok
-                }
-                None => Response::Error { message: t!("Kurulacak güncelleme yok.", "There's no update to install.") },
+            Request::InstallUpdate => match self.install_update(false) {
+                Ok(()) => Response::Ok,
+                Err(message) => Response::Error { message },
             },
         }
     }
@@ -342,43 +345,107 @@ impl Controller {
         Response::MethodSearch { best, blocked, results: out.trials }
     }
 
-    fn set_update(&self, state: UpdateState, url: Option<String>, finished: bool) {
+    fn set_update(&self, state: UpdateState, finished: bool) {
         let mut inner = self.inner.lock().unwrap();
         if finished && !matches!(state, UpdateState::Failed { .. }) {
             inner.update.checked_at_ms = Some(now_ms());
         }
         inner.update.state = state;
-        inner.update_url = url;
         let status = inner.update.clone();
         broadcast(&mut inner, Event::Update { status });
     }
 
-    /// Guncellemeyi arka planda denetler; sonuc `Event::Update` olarak gider.
+    /// Guncellemeyi arka planda denetler; imzali paket varsa indirip dogrular ve "Otomatik
+    /// yukle" aciksa hemen kurar. Sonuc `Event::Update` olarak gider.
     pub fn check_update(&self, forced: bool) {
-        let (mode, channel, last) = {
-            let inner = self.inner.lock().unwrap();
-            (inner.config.updates, inner.config.update_channel, inner.update.checked_at_ms)
+        let (mode, channel) = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.update_busy || matches!(inner.update.state, UpdateState::Installing { .. }) {
+                return;
+            }
+            let last = inner.update.checked_at_ms;
+            if !forced && (inner.config.updates == UpdateMode::Off || last.is_some_and(|t| now_ms().saturating_sub(t) < UPDATE_INTERVAL_MS)) {
+                return;
+            }
+            inner.update_busy = true;
+            (inner.config.updates, inner.config.update_channel)
         };
-        if !forced && (mode == UpdateMode::Off || last.is_some_and(|t| now_ms().saturating_sub(t) < UPDATE_INTERVAL_MS)) {
-            return;
-        }
         let Some(me) = self.me.upgrade() else { return };
-        self.set_update(UpdateState::Checking, None, false);
+        self.set_update(UpdateState::Checking, false);
         std::thread::spawn(move || {
-            let current = Version::parse(shared::VERSION).expect("surum");
-            match updates::fetch() {
-                Ok(list) => match updates::pick(&current, &list, channel == UpdateChannel::Beta) {
-                    Some(f) => {
-                        info!("Mac güncellemesi var: {}", f.version);
-                        me.set_update(UpdateState::Ready { version: f.version.to_string(), notes: f.notes, sha256: String::new() }, Some(f.url), true)
+            let result = me.find_update(channel == UpdateChannel::Beta);
+            me.inner.lock().unwrap().update_busy = false;
+            match result {
+                Ok(ready @ UpdateState::Ready { .. }) if mode == UpdateMode::Auto && me.inner.lock().unwrap().prepared.is_some() => {
+                    if let Err(e) = me.install_update(true) {
+                        // Kendiliginden kurulamadi (orn. klasor yazilamiyor): elle kurulum icin hazir.
+                        warn!("Güncelleme kendiliğinden kurulamadı: {e}");
+                        me.set_update(ready, true);
                     }
-                    None => me.set_update(UpdateState::UpToDate, None, true),
-                },
+                }
+                Ok(state) => me.set_update(state, true),
                 Err(message) => {
                     warn!("Güncelleme denetlenemedi: {message}");
-                    me.set_update(UpdateState::Failed { message }, None, true)
+                    me.set_update(UpdateState::Failed { message }, true)
                 }
             }
         });
+    }
+
+    fn find_update(&self, beta: bool) -> Result<UpdateState, String> {
+        let current = Version::parse(shared::VERSION).expect("surum");
+        let list = updates::fetch()?;
+        let Some(found) = updates::pick(&current, &list, beta) else {
+            return Ok(UpdateState::UpToDate);
+        };
+        info!("Mac güncellemesi var: {} (şu an {current}).", found.version);
+        let version = found.version.to_string();
+        let ready = UpdateState::Ready { version: version.clone(), notes: found.notes.clone(), sha256: String::new() };
+        let Some(signed) = &found.signed else {
+            // Imzali paket yok: "Simdi yukle" disk goruntusunu tarayicida acar.
+            let mut inner = self.inner.lock().unwrap();
+            inner.update_url = found.dmg_url.clone();
+            inner.prepared = None;
+            return Ok(ready);
+        };
+        self.set_update(UpdateState::Downloading { version: version.clone(), percent: 0 }, false);
+        let prepared = updates::prepare(&found, signed, &self.data_dir.join("update"))?;
+        info!("Sürüm {version} indirildi ve imzası doğrulandı.");
+        let sha256 = prepared.sha256.clone();
+        let mut inner = self.inner.lock().unwrap();
+        inner.update_url = found.dmg_url.clone();
+        inner.prepared = Some(prepared);
+        Ok(UpdateState::Ready { version, notes: found.notes, sha256 })
+    }
+
+    /// Hazir paketi kurar: betik uygulama kapaninca yeni paketi yerine koyup yeniden acar.
+    /// `background`: kendiliginden kurulum; uygulama menu cubugunda yeniden acilir.
+    pub fn install_update(&self, background: bool) -> Result<(), String> {
+        let (prepared, url) = {
+            let inner = self.inner.lock().unwrap();
+            (inner.prepared.clone(), inner.update_url.clone())
+        };
+        let manual = |url: Option<String>, why: String| match url {
+            Some(url) if !background => {
+                // Kurulum paketi tarayicida iner; kullanici uygulamayi Uygulamalar'a surukler.
+                let _ = std::process::Command::new("/usr/bin/open").arg(url).spawn();
+                Ok(())
+            }
+            _ => Err(why),
+        };
+        let Some(p) = prepared else {
+            return manual(url, t!("Kurulacak güncelleme yok.", "There's no update to install."));
+        };
+        let Some(bundle) = updates::bundle_path() else {
+            return manual(url, t!("Uygulama paketi bulunamadı.", "Couldn't find the app bundle."));
+        };
+        if let Err(e) = updates::install(&p.zip, &self.data_dir.join("update"), &bundle, std::process::id(), background) {
+            warn!("Kendiliğinden kurulamadı: {e}");
+            return manual(url, e);
+        }
+        info!("Sürüm {} kuruluyor; uygulama kapanıp yeniden açılacak.", p.version);
+        self.set_update(UpdateState::Installing { version: p.version.to_string() }, false);
+        // Arayuz "kuruluyor" olayini gorup kapanir; kapanmazsa betik 30 sn sonra kapatir.
+        Ok(())
     }
 }

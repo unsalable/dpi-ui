@@ -2,7 +2,8 @@
 # Mac paketi: Apple Silicon + Intel tek uygulama (DPI UI.app) ve suruklenip birakilan .dmg.
 # GitHub'in Mac makinelerinde calisir (Xcode araclari: lipo, iconutil, codesign, hdiutil).
 #
-#   bash installer/mac/package.sh            -> build/mac/DPI UI.app, build/DPI-UI-Mac.dmg
+#   bash installer/mac/package.sh            -> build/mac/DPI UI.app, build/DPI-UI-Mac.dmg (elle kurulum),
+#                                               build/DPI-UI-Mac.zip (kendiliginden guncelleme paketi)
 #
 # Imza: Apple gelistirici hesabi olmadigi icin "ad-hoc" (yerel) imza. Indirilen uygulama ilk
 # acilista "dogrulanamadi" der; Sistem Ayarlari > Gizlilik ve Guvenlik > "Yine de Ac" bir kez
@@ -40,4 +41,8 @@ cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
 rm -f build/DPI-UI-Mac.dmg
 hdiutil create -volname "DPI UI" -srcfolder "$stage" -ov -format UDZO build/DPI-UI-Mac.dmg
-ls -la build/DPI-UI-Mac.dmg
+
+# Guncelleme paketi: uygulamanin kendini guncellerken indirdigi, imzali manifestin gosterdigi dosya.
+rm -f build/DPI-UI-Mac.zip
+ditto -c -k --keepParent "$app" build/DPI-UI-Mac.zip
+ls -la build/DPI-UI-Mac.dmg build/DPI-UI-Mac.zip

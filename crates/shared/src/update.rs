@@ -7,6 +7,11 @@
 //!   update.json.sig             update.json'un Ed25519 imzasi (onaltilik metin)
 //! Manifest imzalidir ve surumu da icerir: eski bir paket "yeni surum" diye sunulamaz,
 //! kurulum dosyasi da manifestteki SHA-256 ile birebir eslesmek zorundadir.
+//!
+//! Mac surumu ayni anahtar ve ayni manifest bicimiyle kendi dosyalarini kullanir:
+//!   DPI-UI-Mac.zip              uygulama paketi (ditto ile sikistirilmis DPI UI.app)
+//!   update-mac.json(.sig)       paketin imzali manifesti
+//!   DPI-UI-Mac.dmg              elle kurulum icin disk goruntusu (imza zincirinde yok)
 
 use std::cmp::Ordering;
 
@@ -21,6 +26,10 @@ pub const INSTALLER_NAME: &str = "DPI-UI-Setup.exe";
 pub const LEGACY_INSTALLER_NAME: &str = "GoodbyeDPI-UI-3-Setup.exe";
 pub const MANIFEST_NAME: &str = "update.json";
 pub const SIGNATURE_NAME: &str = "update.json.sig";
+pub const MAC_PACKAGE_NAME: &str = "DPI-UI-Mac.zip";
+pub const MAC_DMG_NAME: &str = "DPI-UI-Mac.dmg";
+pub const MAC_MANIFEST_NAME: &str = "update-mac.json";
+pub const MAC_SIGNATURE_NAME: &str = "update-mac.json.sig";
 
 /// Surum imzalarini dogrulayan Ed25519 acik anahtari. Ozel anahtar depoda degildir;
 /// yalnizca surum yayinlayan bilgisayarda durur (`tools/release`).
@@ -183,11 +192,20 @@ pub struct Manifest {
 impl Manifest {
     /// Imzasi dogrulanmis manifesti adaya karsi denetler.
     pub fn check(&self, expected: &Version) -> Result<(), String> {
+        self.check_files(expected, &[INSTALLER_NAME, LEGACY_INSTALLER_NAME])
+    }
+
+    /// Mac paketinin manifesti.
+    pub fn check_mac(&self, expected: &Version) -> Result<(), String> {
+        self.check_files(expected, &[MAC_PACKAGE_NAME])
+    }
+
+    fn check_files(&self, expected: &Version, files: &[&str]) -> Result<(), String> {
         let v = Version::parse(&self.version).ok_or_else(|| crate::t!("manifestteki sürüm okunamadı", "couldn't read the version in the manifest"))?;
         if v != *expected {
             return Err(crate::t!("manifest sürümü ({v}) yayın etiketiyle ({expected}) eşleşmiyor", "manifest version ({v}) doesn't match the release tag ({expected})"));
         }
-        if !self.file.eq_ignore_ascii_case(INSTALLER_NAME) && !self.file.eq_ignore_ascii_case(LEGACY_INSTALLER_NAME) {
+        if !files.iter().any(|f| self.file.eq_ignore_ascii_case(f)) {
             return Err(crate::t!("manifest beklenmeyen bir dosyayı gösteriyor", "the manifest points to an unexpected file"));
         }
         if self.sha256.len() != 64 || !self.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {

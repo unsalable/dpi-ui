@@ -213,9 +213,6 @@ msgstr "UPDATES"
 msgid "Güncellemeleri otomatik yükle"
 msgstr "Install updates automatically"
 
-msgid "Güncellemeleri otomatik denetle"
-msgstr "Check for updates automatically"
-
 msgid "SORUN GİDERME"
 msgstr "TROUBLESHOOTING"
 

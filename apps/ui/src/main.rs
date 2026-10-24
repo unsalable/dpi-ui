@@ -68,6 +68,22 @@ fn main() {
         let ok = args.get(i + 1).is_some_and(|dir| macapp::write_iconset(std::path::Path::new(dir)).is_ok());
         std::process::exit(if ok { 0 } else { 1 });
     }
+    // Kurulum adiminin denemesi (perf/mac-app-test.sh): yerel paketi, PID'i verilen calisan uygulama
+    // kapaninca kurar. Imza denetimi indirmede yapilir; burada paket zaten bu bilgisayarda.
+    if let Some(i) = args.iter().position(|a| a == "--install-update") {
+        let zip = args.get(i + 1).map(std::path::PathBuf::from);
+        let pid = args.get(i + 2).and_then(|p| p.parse::<u32>().ok());
+        let result = match (zip, pid, macservice::updates::bundle_path()) {
+            (Some(zip), Some(pid), Some(bundle)) => {
+                macservice::updates::install(&zip, &shared::paths::service_data_dir().join("update"), &bundle, pid, false)
+            }
+            _ => Err("kullanım: --install-update <paket.zip> <pid> (uygulama paketinin içinden)".into()),
+        };
+        if let Err(e) = &result {
+            eprintln!("{e}");
+        }
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
     let service = match macservice::start() {
         Ok(s) => Some(s),
         Err(e) => {

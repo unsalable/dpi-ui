@@ -53,6 +53,46 @@ grep -q "Enabled: No" <<<"$after" || bad "cikista sistem proxy ayari geri alinma
 cp "$data/logs/service.log" "$out/" 2>/dev/null
 cp "$data/config.json" "$out/" 2>/dev/null
 
+# Kendiliginden guncelleme (kurulum adimi): uygulama Uygulamalar'da calisirken isaretli bir "yeni
+# surum" paketi kurulur; uygulama kapanir, yeni paket yerine konur ve uygulama yeniden acilir.
+inst="/Applications/DPI UI.app"
+rm -rf "$inst" "$inst.eski"
+cp -R "$app" "$inst"
+newdir=$(mktemp -d)
+cp -R "$app" "$newdir/DPI UI.app"
+echo deneme >"$newdir/DPI UI.app/Contents/Resources/guncelleme-denemesi"
+codesign --force --deep --sign - "$newdir/DPI UI.app"
+ditto -c -k --keepParent "$newdir/DPI UI.app" "$newdir/paket.zip"
+rm -f "$data/ipc.sock"
+open "$inst"
+for _ in $(seq 1 40); do
+    [ -S "$data/ipc.sock" ] && break
+    sleep 0.5
+done
+sleep 2
+oldpid=$(pgrep -f "^/Applications/DPI UI.app/Contents/MacOS/DPI UI" | head -1)
+note "guncelleme oncesi PID: $oldpid"
+if "$inst/Contents/MacOS/DPI UI" --install-update "$newdir/paket.zip" "$oldpid" 2>"$out/install.err"; then
+    osascript -e 'tell application "DPI UI" to quit'
+    newpid=""
+    for _ in $(seq 1 60); do
+        newpid=$(pgrep -f "^/Applications/DPI UI.app/Contents/MacOS/DPI UI" | head -1)
+        if [ -f "$inst/Contents/Resources/guncelleme-denemesi" ] && [ -n "$newpid" ] && [ "$newpid" != "$oldpid" ]; then break; fi
+        sleep 0.5
+    done
+    [ -f "$inst/Contents/Resources/guncelleme-denemesi" ] && note "yeni paket yerinde" || bad "yeni paket yerine konmadi"
+    [ -n "$newpid" ] && [ "$newpid" != "$oldpid" ] && note "yeniden acildi: PID $newpid" || bad "uygulama yeniden acilmadi"
+    [ -e "$inst.eski" ] && bad "eski paket silinmedi"
+    codesign --verify --deep --strict "$inst" 2>>"$out/install.err" && note "kurulan paketin imzasi saglam" || bad "kurulan paketin imzasi bozuk"
+    sleep 3
+    screencapture -x "$out/9-guncelleme-sonrasi.png"
+    osascript -e 'tell application "DPI UI" to quit'
+    sleep 2
+else
+    bad "kurulum baslatilamadi: $(cat "$out/install.err")"
+fi
+rm -rf "$inst" "$newdir"
+
 # Sayfa goruntuleri (Turkce): ayri veri klasoru, otomatik baglanti kapali; GDPI3_PAGE
 # "derinlik:altsayfa" (0:0 ana ekran, 1:0 ayarlar, 2:1 yontem, 2:2 DNS, 2:3 siteler, 2:4 genel).
 pages=$(mktemp -d)
