@@ -394,8 +394,14 @@ impl Controller {
 
     fn find_update(&self, beta: bool) -> Result<UpdateState, String> {
         let current = Version::parse(shared::VERSION).expect("surum");
-        let list = updates::fetch()?;
-        let Some(found) = updates::pick(&current, &list, beta) else {
+        let found = match updates::fetch() {
+            Ok(list) => updates::pick(&current, &list, beta),
+            Err(e) => {
+                warn!("Sürüm listesi alınamadı ({e}); yayın akışına bakılıyor.");
+                updates::pick_from_feed(&current, beta)?
+            }
+        };
+        let Some(found) = found else {
             return Ok(UpdateState::UpToDate);
         };
         info!("Mac güncellemesi var: {} (şu an {current}).", found.version);

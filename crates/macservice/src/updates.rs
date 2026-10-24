@@ -117,6 +117,54 @@ pub fn fetch() -> Result<Vec<Release>, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())
 }
 
+/// API'ye ulasilamazsa (ortak IP'li hatlarda saatlik sinir: 403) sitenin yayin akisindan bakar.
+/// Akista on surum bilgisi yok; surum etiketinde "-" varsa on surum sayilir (release.ps1 de oyle
+/// isaretler). Imzali Mac paketi olan en yeni uygun surum.
+pub fn pick_from_feed(current: &Version, include_prerelease: bool) -> Result<Option<Found>, String> {
+    let include_pre = include_prerelease || current.is_prerelease();
+    let feed_url = format!("https://github.com/{}/releases.atom", update::REPO);
+    let out = Command::new("/usr/bin/curl").args(["-fsSL", "--proto", "=https", "--max-time", "20", &feed_url]).output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+    }
+    let feed = String::from_utf8_lossy(&out.stdout);
+    let mut versions: Vec<(Version, String)> = feed_tags(&feed)
+        .into_iter()
+        .filter_map(|tag| Some((Version::parse(tag)?, tag.to_owned())))
+        .filter(|(v, _)| *v > *current && (include_pre || !v.is_prerelease()))
+        .collect();
+    versions.sort_by(|a, b| b.0.cmp(&a.0));
+    versions.dedup_by(|a, b| a.1 == b.1);
+    for (version, tag) in versions {
+        let base = format!("https://github.com/{}/releases/download/{tag}", update::REPO);
+        let exists = |name: &str| {
+            Command::new("/usr/bin/curl")
+                .args(["-fsSLI", "--proto", "=https", "--max-time", "15", "-o", "/dev/null", &format!("{base}/{name}")])
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        if exists(update::MAC_MANIFEST_NAME) {
+            let url = |name: &str| format!("{base}/{name}");
+            return Ok(Some(Found {
+                version,
+                notes: String::new(),
+                dmg_url: Some(url(update::MAC_DMG_NAME)),
+                signed: Some(Signed {
+                    package_url: url(update::MAC_PACKAGE_NAME),
+                    manifest_url: url(update::MAC_MANIFEST_NAME),
+                    signature_url: url(update::MAC_SIGNATURE_NAME),
+                }),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+/// Atom akisindaki yayin etiketleri (siralari korunur).
+fn feed_tags(feed: &str) -> Vec<&str> {
+    feed.split("releases/tag/").skip(1).filter_map(|s| s.split(['"', '<']).next()).filter(|t| !t.is_empty()).collect()
+}
+
 /// Manifesti dogrular, paketi indirir ve denetler. Paket `dir` icinde durur.
 pub fn prepare(found: &Found, signed: &Signed, dir: &Path) -> Result<Prepared, String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -286,6 +334,16 @@ mod tests {
         assert!(verify_manifest(&old, sign(&old).as_bytes(), &key, &v).is_err(), "eski surum yeni diye sunulamaz");
         let windows = m(update::INSTALLER_NAME, "3.2.0");
         assert!(verify_manifest(&windows, sign(&windows).as_bytes(), &key, &v).is_err(), "Windows paketi Mac'e kurulmaz");
+    }
+
+    #[test]
+    fn reads_tags_from_the_release_feed() {
+        let feed = r#"<entry><id>tag:github.com,2008:Repository/1/v3.1.2-mac.2</id>
+<link rel="alternate" type="text/html" href="https://github.com/unsalable/dpi-ui/releases/tag/v3.1.2-mac.2"/>
+<title>DPI UI 3.1.2-mac.2 (Mac)</title></entry><entry>
+<link rel="alternate" type="text/html" href="https://github.com/unsalable/dpi-ui/releases/tag/v3.1.2"/></entry>"#;
+        assert_eq!(feed_tags(feed), ["v3.1.2-mac.2", "v3.1.2"]);
+        assert!(feed_tags("<feed></feed>").is_empty());
     }
 
     #[test]

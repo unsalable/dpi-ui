@@ -25,12 +25,19 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 say "DPI UI'nin en yeni Mac sürümü aranıyor..."
-curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases?per_page=20" -o "$tmp/releases.json" ||
-    fail "GitHub'a ulaşılamadı"
-# Yayınlar yeniden eskiye sıralıdır: Mac paketi olan ilk yayın en yenisidir.
-zip_url=$(grep -o '"browser_download_url": *"[^"]*/DPI-UI-Mac\.zip"' "$tmp/releases.json" | head -1 | sed 's/.*"\(https[^"]*\)"/\1/' || true)
-[ -n "$zip_url" ] || fail "yayınlarda Mac paketi bulunamadı"
-base="${zip_url%/DPI-UI-Mac.zip}"
+# Sitenin yayın akışı (API'nin saatlik sınırına takılmaz); yayınlar yeniden eskiye sıralı.
+curl -fsSL "https://github.com/$REPO/releases.atom" -o "$tmp/releases.atom" || fail "GitHub'a ulaşılamadı"
+base=""
+for tag in $(grep -o "releases/tag/[^\"<]*" "$tmp/releases.atom" | sed 's|releases/tag/||' | awk '!seen[$0]++'); do
+    url="https://github.com/$REPO/releases/download/$tag"
+    # Mac paketi olan ilk yayın en yenisidir.
+    if curl -fsSLI -o /dev/null "$url/DPI-UI-Mac.zip"; then
+        base="$url"
+        break
+    fi
+done
+[ -n "$base" ] || fail "yayınlarda Mac paketi bulunamadı"
+zip_url="$base/DPI-UI-Mac.zip"
 say "Sürüm: ${base##*/}"
 
 curl -fsSL "$base/update-mac.json" -o "$tmp/update-mac.json" || fail "manifest indirilemedi"
