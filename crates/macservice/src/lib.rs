@@ -18,6 +18,31 @@ use std::sync::Arc;
 
 pub use controller::Controller;
 
+/// Acik dosya siniri: macOS'ta varsayilan 256. Proxy her baglantiya iki soket harcar; Roblox gibi
+/// cok baglanti acan bir uygulama siniri dolduruyor, sonra ne yeni baglanti ne de kapanista
+/// sistem ayarini geri alan komut acilabiliyordu (CI'da "Too many open files").
+#[cfg(unix)]
+fn raise_fd_limit() {
+    // SAFETY: getrlimit/setrlimit yalnizca verilen yapiyi okur/yazar.
+    unsafe {
+        let mut rl = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl) != 0 {
+            return;
+        }
+        let before = rl.rlim_cur;
+        // macOS RLIMIT_NOFILE icin OPEN_MAX (10240) ustunu kabul etmez.
+        let want = rl.rlim_max.min(10240);
+        if before < want {
+            rl.rlim_cur = want;
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &rl) == 0 {
+                info!("Açık dosya sınırı {before} -> {want}.");
+            } else {
+                warn!("Açık dosya sınırı yükseltilemedi ({before}).");
+            }
+        }
+    }
+}
+
 /// Arayuzun baglandigi soket.
 pub fn socket_path() -> PathBuf {
     shared::paths::service_data_dir().join("ipc.sock")
@@ -36,6 +61,8 @@ pub fn start() -> std::io::Result<Service> {
     std::fs::create_dir_all(&dir)?;
     log::init(&dir.join("logs"));
     info!("DPI UI {} (Mac) başlıyor.", shared::VERSION);
+    #[cfg(unix)]
+    raise_fd_limit();
 
     let config = store::load_config(&dir);
     shared::i18n::set(config.language);

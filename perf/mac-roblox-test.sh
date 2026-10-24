@@ -49,6 +49,9 @@ direct=$(grep -- "->" "$out/lsof.txt" | grep -vc -- "->127.0.0.1:")
 note "RobloxPlayer TCP: proxy uzerinden $via, dogrudan $direct"
 [ "$via" -gt 0 ] || bad "Roblox proxy'yi kullanmadi"
 [ "$direct" -eq 0 ] || bad "Roblox dogrudan baglanti kurdu"
+dpid=$(pgrep -f "DPI UI.app/Contents/MacOS/DPI UI" | head -1)
+note "DPI UI acik dosya sayisi (Roblox acikken): $(lsof -p "$dpid" 2>/dev/null | wc -l | tr -d ' ')"
+grep "Açık dosya sınırı" "$data/logs/service.log" | tail -1 | tee -a "$out/summary.txt" | grep -q . || bad "acik dosya siniri yukseltilmedi"
 
 pkill -f "Roblox.app|RobloxPlayer|RobloxInstaller"
 osascript -e 'tell application "DPI UI" to quit' >/dev/null 2>&1

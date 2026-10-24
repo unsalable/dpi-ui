@@ -489,25 +489,27 @@ fn fail(s: &Shared, host: String, port: u16, e: &io::Error) {
 
 fn tunnel(client: TcpStream, up: Upstream, s: &Shared) {
     let _ = client.set_read_timeout(None);
-    let (Ok(mut c_out), Ok(mut u_in)) = (client.try_clone(), up.stream.try_clone()) else { return };
+    // Iki yon ayni soketleri paylasir (`&TcpStream` okur/yazar): `try_clone` her baglantiya iki
+    // dosya tanitici daha harciyordu; macOS'un 256'lik varsayilan sinirina Roblox gibi cok
+    // baglanti acan bir uygulama tek basina dayaniyordu.
+    let client = Arc::new(client);
+    let upstream = Arc::new(up.stream);
     let started = Instant::now();
     let activity = Arc::new(AtomicU64::new(0));
     let (to_client_done, rx_to_client) = mpsc::channel::<()>();
     let (to_server_done, rx_to_server) = mpsc::channel::<()>();
 
-    let act = activity.clone();
+    let (c, u, act) = (client.clone(), upstream.clone(), activity.clone());
     let back = thread::Builder::new().name("proxy-down".into()).stack_size(STACK).spawn(move || {
-        pump(&mut u_in, &mut c_out, &act, started);
-        let _ = c_out.shutdown(Shutdown::Write);
+        pump(&u, &c, &act, started);
+        let _ = c.shutdown(Shutdown::Write);
         drop(to_client_done);
-        wait_or_close(&rx_to_server, &act, started, &[&c_out, &u_in]);
+        wait_or_close(&rx_to_server, &act, started, &[&c, &u]);
     });
     let Ok(back) = back else { return };
 
-    let mut client = client;
-    let mut upstream = up.stream;
-    if send_first(&mut client, &mut upstream, up.pending, &up.host, s).is_ok() {
-        pump(&mut client, &mut upstream, &activity, started);
+    if send_first(&client, &upstream, up.pending, &up.host, s).is_ok() {
+        pump(&client, &upstream, &activity, started);
     }
     let _ = upstream.shutdown(Shutdown::Write);
     drop(to_server_done);
@@ -534,7 +536,7 @@ fn wait_or_close(other_done: &mpsc::Receiver<()>, activity: &AtomicU64, started:
     }
 }
 
-fn pump(from: &mut TcpStream, to: &mut TcpStream, activity: &AtomicU64, started: Instant) {
+fn pump(mut from: &TcpStream, mut to: &TcpStream, activity: &AtomicU64, started: Instant) {
     let mut buf = vec![0u8; BUF];
     loop {
         match from.read(&mut buf) {
@@ -552,7 +554,7 @@ fn pump(from: &mut TcpStream, to: &mut TcpStream, activity: &AtomicU64, started:
 }
 
 /// Istemcinin ilk mesajini toplar, yonteme gore parcalayip gonderir.
-fn send_first(client: &mut TcpStream, up: &mut TcpStream, mut first: Vec<u8>, host: &str, s: &Shared) -> io::Result<()> {
+fn send_first(mut client: &TcpStream, mut up: &TcpStream, mut first: Vec<u8>, host: &str, s: &Shared) -> io::Result<()> {
     let mut chunk = vec![0u8; BUF];
     if first.is_empty() {
         let n = loop {
@@ -594,11 +596,11 @@ fn send_first(client: &mut TcpStream, up: &mut TcpStream, mut first: Vec<u8>, ho
     s.counters.desynced.fetch_add(1, Ordering::Relaxed);
     s.emit(Event::Desynced { host: host.to_owned(), segments: plan.segments.len() });
     let v6 = up.peer_addr()?.is_ipv6();
-    let sock = SockRef::from(&*up);
+    let sock = SockRef::from(up);
     let Ok(normal) = (if v6 { sock.unicast_hops_v6() } else { sock.ttl_v4() }) else {
         // TTL okunamiyorsa ters sira yapilamaz; parcalar normal TTL ile gider.
         for seg in &plan.segments {
-            (&*up).write_all(&plan.data[seg.range.clone()])?;
+            up.write_all(&plan.data[seg.range.clone()])?;
         }
         return Ok(());
     };
@@ -606,7 +608,7 @@ fn send_first(client: &mut TcpStream, up: &mut TcpStream, mut first: Vec<u8>, ho
         if seg.low_ttl {
             set_ttl(&sock, v6, 1)?;
         }
-        let r = (&*up).write_all(&plan.data[seg.range.clone()]);
+        let r = up.write_all(&plan.data[seg.range.clone()]);
         if seg.low_ttl {
             set_ttl(&sock, v6, normal)?;
         }
