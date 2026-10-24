@@ -29,7 +29,9 @@ pub fn select_backend() -> Result<(), slint::PlatformError> {
 }
 
 /// Arayuz yazi tipi. Buyuk harf isaretleri satir kutusuna sigmali: Slint'in yazilim cizicisi
-/// metni kendi kutusuyla kirpar. `GDPI3_FONT` denemeler icindir.
+/// metni kendi kutusuyla kirpar. macOS'ta denendi (perf/mac-app-test.sh, FONT_TRIALS): sistem
+/// yazi tipi (SF) ve Helvetica'da Ö, İ, Ü'nun ustu kesiliyor; Helvetica Neue, Avenir Next ve
+/// Lucida Grande'de tam. `GDPI3_FONT` denemeler icindir.
 pub fn ui_font() -> String {
     std::env::var("GDPI3_FONT").unwrap_or_else(|_| "Helvetica Neue".into())
 }

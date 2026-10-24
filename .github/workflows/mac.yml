@@ -77,8 +77,6 @@ jobs:
       - name: Paket (.app ve .dmg)
         run: bash installer/mac/package.sh
       - name: Uygulamayi ac ve dene
-        env:
-          FONT_TRIALS: ".AppleSystemUIFont;Helvetica Neue;Lucida Grande;Avenir Next;SF Pro Text;Helvetica"
         run: bash perf/mac-app-test.sh "build/mac/DPI UI.app" perf/out/mac-app
       - uses: actions/upload-artifact@v4
         if: always()
