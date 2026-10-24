@@ -1,15 +1,13 @@
 name: Mac yayini
 
 # Mac paketini (DPI-UI-Mac.dmg) tam iyilestirmeyle derleyip GitHub yayinina ekler.
-# - Elle: etiket verilir; yayin yoksa on surum olarak olusturulur (Windows guncelleyicisi on
-#   surumleri ve Windows dosyasi olmayan yayinlari hic gormez).
+# - Mac etiketi gonderilince (or. v3.1.2-mac.1): yayin yoksa on surum olarak olusturulur.
+#   Windows guncelleyicisi on surumleri ve Windows dosyasi olmayan yayinlari hic gormez; Mac
+#   guncelleyicisi de kararli surumdeyken on surum onermez.
 # - Bir yayin yayimlaninca (release.ps1) Mac paketi o yayina da eklenir.
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Etiket (or. v3.1.2-mac.1); yoksa bu daldan olusturulur"
-        required: true
+  push:
+    tags: ["v*-mac.*"]
   release:
     types: [published]
 
@@ -29,7 +27,7 @@ jobs:
       - name: Yayina ekle
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
