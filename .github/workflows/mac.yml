@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Ayni dala yeni gonderim gelince eski Mac calismasi iptal edilir (Mac makineleri sinirli).
+concurrency:
+  group: mac-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   motor:
     strategy:
