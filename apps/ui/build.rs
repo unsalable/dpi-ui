@@ -39,6 +39,11 @@ fn main() {
     println!("cargo:rerun-if-changed=lang");
     println!("cargo:rerun-if-changed=src/iconart.rs");
 
+    // Simge, bildirim dosyasi ve surum bilgisi yalnizca Windows exe'sine gomulur; Mac'te
+    // uygulama simgesi paketleme sirasinda (.icns) eklenir.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let ico = out.join("app.ico");
     std::fs::write(&ico, iconart::build_ico(&[16, 20, 24, 32, 40, 48, 64, 256], iconart::Mark::App)).unwrap();

@@ -16,5 +16,5 @@ pub mod server;
 pub use desync::{Desync, Pos};
 pub use resolve::{Resolve, SystemResolver};
 #[cfg(feature = "doh")]
-pub use resolve::DohResolver;
+pub use resolve::{DohResolver, UdpResolver};
 pub use server::{DEFAULT_PORT, Event, Options, PAC_PATH, Proxy, Stats};

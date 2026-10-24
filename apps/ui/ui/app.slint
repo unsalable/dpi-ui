@@ -11,13 +11,16 @@ export { PowerState, Theme, Motion, AppState, Choice, HostItem, BenchItem, Categ
 export component AppWindow inherits Window {
     title: "DPI UI";
     width: 400px;
-    height: 640px;
-    no-frame: true;
+    // Mac: ustte macOS'un pencere dugmeleri (trafik isiklari) icin seffaf cubuk payi.
+    height: 640px + root.top-inset;
+    no-frame: !AppState.mac;
     /// Artinca tum pencere yeniden cizilir (Windows icerigi attiginda: simge durumundan donus vb.).
     in-out property <int> repaint-epoch;
     background: root.repaint-epoch >= 0 ? Theme.bg : Theme.bg;
     default-font-family: "Segoe UI Variable Text";
     default-font-size: 14px;
+
+    property <length> top-inset: AppState.mac ? 28px : 0px;
 
     /// 0 = ana ekran, 1 = ayarlar menusu, 2 = alt sayfa.
     in-out property <int> depth: 0;
@@ -57,6 +60,8 @@ export component AppWindow inherits Window {
     property <bool> menu-shown: root.depth == 1 || (root.depth == 2 && !root.sub-from-home);
 
     body := Rectangle {
+        y: root.top-inset;
+        height: root.height - root.top-inset;
         clip: true;
 
         home := HomePage {
@@ -156,8 +161,9 @@ export component AppWindow inherits Window {
             }
         }
 
-        // Pencere dugmeleri her sayfanin ustunde, ayni yerde durur.
-        HorizontalLayout {
+        // Pencere dugmeleri her sayfanin ustunde, ayni yerde durur. Mac'te macOS'un kendi
+        // dugmeleri sol ustte.
+        if !AppState.mac: HorizontalLayout {
             x: parent.width - self.width - 8px;
             y: 10px;
             width: self.preferred-width;

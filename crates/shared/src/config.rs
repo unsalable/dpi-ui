@@ -29,6 +29,9 @@ pub struct AppConfig {
     /// Secili yontem: hazir yontem kimligi ya da ozel yontemin kimligi.
     pub method: String,
     pub custom_methods: Vec<CustomMethod>,
+    /// Mac surumunun (proxy motoru) yontemi: `proxy::presets` kimligi. Bos ya da bilinmiyorsa
+    /// o motorun varsayilani. Windows motoru bunu kullanmaz.
+    pub proxy_method: String,
     pub dns: DnsSettings,
     pub scope: ScopeSettings,
     /// Servis acilinca (ya da arayuz acilinca) baglantiyi da baslat.
@@ -51,6 +54,7 @@ impl Default for AppConfig {
             isp: "general".into(),
             method: presets::DEFAULT.id.into(),
             custom_methods: Vec::new(),
+            proxy_method: String::new(),
             dns: DnsSettings::default(),
             scope: ScopeSettings::default(),
             auto_connect: true,

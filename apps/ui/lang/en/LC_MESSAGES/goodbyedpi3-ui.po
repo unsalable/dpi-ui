@@ -39,6 +39,9 @@ msgstr "General"
 msgid "Windows ile başlar"
 msgstr "Starts with Windows"
 
+msgid "Mac açılınca başlar"
+msgstr "Starts with your Mac"
+
 msgid "Elle başlar"
 msgstr "Starts manually"
 
@@ -183,17 +186,26 @@ msgstr "Connect automatically on start"
 msgid "Oturum açılınca tepside başlat"
 msgstr "Start in the tray when I sign in"
 
+msgid "Mac açılınca menü çubuğunda başlat"
+msgstr "Start in the menu bar when I log in"
+
 msgid "PENCERE"
 msgstr "WINDOW"
 
 msgid "Kapatınca tepside kal"
 msgstr "Stay in the tray when closed"
 
+msgid "Kapatınca menü çubuğunda kal"
+msgstr "Stay in the menu bar when closed"
+
 msgid "GÜNCELLEMELER"
 msgstr "UPDATES"
 
 msgid "Güncellemeleri otomatik yükle"
 msgstr "Install updates automatically"
+
+msgid "Güncellemeleri otomatik denetle"
+msgstr "Check for updates automatically"
 
 msgid "SORUN GİDERME"
 msgstr "TROUBLESHOOTING"
@@ -209,6 +221,9 @@ msgstr "LANGUAGE"
 
 msgid "Windows'un dilini kullanır"
 msgstr "Uses the Windows language"
+
+msgid "Mac'in dilini kullanır"
+msgstr "Uses your Mac's language"
 
 msgid "Sürüm {}"
 msgstr "Version {}"

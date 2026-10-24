@@ -21,6 +21,8 @@ slint = { version = "1.18.1", default-features = false, features = [
     "renderer-software",
     "unstable-winit-030",
 ] }
+
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
@@ -36,6 +38,18 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# Mac: motor uygulamanin icinde (macservice), menu cubugu simgesi (tray-icon), Dock ve
+# kapanis bildirimleri (objc2), uygulama simgesi icin PNG.
+[target.'cfg(target_os = "macos")'.dependencies]
+macservice = { path = "../../crates/macservice" }
+proxy = { path = "../../crates/proxy", default-features = false }
+tray-icon = "0.26.1"
+objc2 = "0.6.5"
+objc2-foundation = { version = "0.3.2", features = ["NSNotification", "NSString", "NSOperation", "block2"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSRunningApplication"] }
+block2 = "0.6.2"
+png = "0.18.1"
 
 [build-dependencies]
 slint-build = "1.18.1"

@@ -237,7 +237,9 @@ export component SettingsMenu inherits Page {
                     icon: Icons.fill-gear;
                     tint: Theme.gray;
                     title: @tr("Genel");
-                    value: AppState.start-with-windows ? @tr("Windows ile başlar") : @tr("Elle başlar");
+                    value: AppState.mac
+                        ? (AppState.tray-at-login ? @tr("Mac açılınca başlar") : @tr("Elle başlar"))
+                        : (AppState.start-with-windows ? @tr("Windows ile başlar") : @tr("Elle başlar"));
                     clicked => {
                         root.open(4);
                     }
@@ -312,7 +314,7 @@ export component MethodPage inherits SubPage {
     property <bool> picked-in-more: AppState.method-index >= AppState.methods-main.length;
     property <bool> show-more: root.more-open || root.picked-in-more;
 
-    Group {
+    if !AppState.mac: Group {
         PickerRow {
             first: true;
             last: true;
@@ -582,6 +584,7 @@ export component DnsPage inherits SubPage {
         header: @tr("GÜVENLİK");
         ToggleRow {
             first: true;
+            last: AppState.mac;
             title: @tr("Ulaşılamazsa sistem DNS'ine dön");
             checked: AppState.dns-fallback;
             toggled(v) => {
@@ -589,7 +592,7 @@ export component DnsPage inherits SubPage {
             }
         }
 
-        ToggleRow {
+        if !AppState.mac: ToggleRow {
             last: true;
             title: @tr("VPN bağlıyken DNS'e dokunma");
             checked: AppState.dns-skip-vpn;
@@ -668,7 +671,7 @@ export component SitesPage inherits SubPage {
         }
     }
 
-    if AppState.scope-mode == 0: Group {
+    if AppState.scope-mode == 0 && !AppState.mac: Group {
         ToggleRow {
             first: true;
             last: true;
@@ -705,7 +708,7 @@ export component SitesPage inherits SubPage {
         }
     }
 
-    if AppState.scope-mode == 0: Group {
+    if AppState.scope-mode == 0 && !AppState.mac: Group {
         header: @tr("ÖĞRENİLENLER");
         if AppState.learned.length == 0: EmptyRow {
             first: true;
@@ -752,7 +755,8 @@ export component GeneralPage inherits SubPage {
 
     Group {
         header: @tr("BAŞLANGIÇ");
-        ToggleRow {
+        // Mac'te motor uygulamanin icinde: ayri bir hizmet baslatma ayari yok.
+        if !AppState.mac: ToggleRow {
             first: true;
             title: @tr("Windows açılınca motoru başlat");
             checked: AppState.start-with-windows;
@@ -762,6 +766,7 @@ export component GeneralPage inherits SubPage {
         }
 
         ToggleRow {
+            first: AppState.mac;
             title: @tr("Açılışta otomatik bağlan");
             checked: AppState.auto-connect;
             toggled(v) => {
@@ -771,7 +776,7 @@ export component GeneralPage inherits SubPage {
 
         ToggleRow {
             last: true;
-            title: @tr("Oturum açılınca tepside başlat");
+            title: AppState.mac ? @tr("Mac açılınca menü çubuğunda başlat") : @tr("Oturum açılınca tepside başlat");
             checked: AppState.tray-at-login;
             toggled(v) => {
                 AppState.set-tray-at-login(v);
@@ -784,7 +789,7 @@ export component GeneralPage inherits SubPage {
         ToggleRow {
             first: true;
             last: true;
-            title: @tr("Kapatınca tepside kal");
+            title: AppState.mac ? @tr("Kapatınca menü çubuğunda kal") : @tr("Kapatınca tepside kal");
             checked: AppState.close-to-tray;
             toggled(v) => {
                 AppState.set-close-to-tray(v);
@@ -797,7 +802,7 @@ export component GeneralPage inherits SubPage {
         ToggleRow {
             first: true;
             last: true;
-            title: @tr("Güncellemeleri otomatik yükle");
+            title: AppState.mac ? @tr("Güncellemeleri otomatik denetle") : @tr("Güncellemeleri otomatik yükle");
             checked: AppState.auto-update;
             toggled(v) => {
                 AppState.set-auto-update(v);
@@ -1009,7 +1014,7 @@ export component AppearancePage inherits SubPage {
         CheckRow {
             first: true;
             title: @tr("Sistem");
-            subtitle: @tr("Windows'un dilini kullanır");
+            subtitle: AppState.mac ? @tr("Mac'in dilini kullanır") : @tr("Windows'un dilini kullanır");
             selected: AppState.language-index == 0;
             clicked => {
                 AppState.select-language(0);

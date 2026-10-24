@@ -295,6 +295,8 @@ impl Ctx {
             st.set_status_title(s(t!("Motor hizmeti kapalı", "Engine service is off")));
             st.set_status_sub(s(t!("Başlatmak için dokun", "Tap to start")));
             st.set_banner(s(""));
+            #[cfg(target_os = "macos")]
+            crate::macapp::show_state(PowerState::Off, &t!("Motor hizmeti kapalı", "Engine service is off"));
             return;
         }
         let (mut power, mut title, mut sub) = match e.state {
@@ -325,6 +327,8 @@ impl Ctx {
                 self.pending_connect.set(None);
             }
         }
+        #[cfg(target_os = "macos")]
+        crate::macapp::show_state(power, &title);
         st.set_power(power);
         st.set_status_title(s(title));
         st.set_status_sub(s(sub));
@@ -366,36 +370,7 @@ impl Ctx {
 
         // Yontemler: secili saglayicinin onerileri (ayri bolum), sonra digerleri, sonra ozeller.
         // Alt satir yontemin ne yaptigini anlatir; ekranda yalnizca secili satirda gorunur.
-        let isp = &presets::ISPS[isp_index];
-        let mut ids: Vec<String> = Vec::new();
-        let mut main: Vec<Choice> = Vec::new();
-        let mut more: Vec<Choice> = Vec::new();
-        for (n, id) in isp.methods.iter().enumerate() {
-            if let Some(m) = presets::method(id) {
-                let badge = if n == 0 { t!("Önerilen", "Recommended") } else { String::new() };
-                main.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s(badge) });
-                ids.push(m.id.into());
-            }
-        }
-        for m in presets::ALL.iter().filter(|m| !isp.methods.contains(&m.id)) {
-            more.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s("") });
-            ids.push(m.id.into());
-        }
-        for c in &cfg.custom_methods {
-            more.push(Choice {
-                id: s(c.id.as_str()),
-                title: s(t!("Özel · {}", "Custom · {}", c.name)),
-                subtitle: s(c.config.short_summary(en)),
-                badge: s(""),
-            });
-            ids.push(c.id.clone());
-        }
-        let method_index = ids.iter().position(|i| i.eq_ignore_ascii_case(&cfg.method)).unwrap_or(0);
-        let header = if isp.id == "general" {
-            t!("ÖNERİLEN", "RECOMMENDED")
-        } else {
-            upper(&t!("{} için", "For {}", isp.label(en)), en)
-        };
+        let MethodList { header, main, more, ids, index: method_index } = method_list(&cfg, isp_index, en);
         update(st.get_methods(), main.iter().chain(more.iter()).cloned().collect(), |m| st.set_methods(m));
         update(st.get_methods_main(), main, |m| st.set_methods_main(m));
         update(st.get_methods_more(), more, |m| st.set_methods_more(m));
@@ -474,7 +449,7 @@ impl Ctx {
         st.set_start_with_windows(cfg.start_with_windows);
         st.set_auto_connect(cfg.auto_connect);
         st.set_auto_update(cfg.updates == UpdateMode::Auto);
-        st.set_method_name(s(cfg.active_method().name));
+        st.set_method_name(s(method_name(&cfg)));
         st.set_dns_name(s(cfg.active_dns().display_name()));
 
         *self.config.borrow_mut() = Some(cfg);
@@ -535,9 +510,12 @@ impl Ctx {
             _ => !winsys::system_prefers_light(),
         };
         app.global::<Theme>().set_dark(dark);
+        #[cfg(windows)]
         if let Some(hwnd) = hwnd_of(&app) {
             winsys::set_window_theme(hwnd, dark);
         }
+        #[cfg(target_os = "macos")]
+        winsys::set_window_theme(&app, dark);
     }
 
     // ------------------------------------------------------------ ilk calistirma
@@ -610,6 +588,18 @@ impl Ctx {
         if self.closing.get() {
             return;
         }
+        // Mac: tek surec. Menu cubugunda kalinacaksa yalnizca pencere gizlenir.
+        #[cfg(target_os = "macos")]
+        {
+            if self.prefs.borrow().close_to_tray {
+                if let Some(app) = self.ui() {
+                    let _ = app.hide();
+                }
+                return;
+            }
+            self.quit_now();
+        }
+        #[cfg(windows)]
         if self.prefs.borrow().close_to_tray {
             if !self.test_mode {
                 spawn_tray();
@@ -721,6 +711,86 @@ impl Ctx {
 
 }
 
+/// Yontem ekrani: bolum basligi, ana bolum, diger yontemler, sirali kimlikler, secili sira.
+struct MethodList {
+    header: String,
+    main: Vec<Choice>,
+    more: Vec<Choice>,
+    ids: Vec<String>,
+    index: usize,
+}
+
+#[cfg(windows)]
+fn method_list(cfg: &AppConfig, isp_index: usize, en: bool) -> MethodList {
+    let isp = &presets::ISPS[isp_index];
+    let mut ids: Vec<String> = Vec::new();
+    let mut main: Vec<Choice> = Vec::new();
+    let mut more: Vec<Choice> = Vec::new();
+    for (n, id) in isp.methods.iter().enumerate() {
+        if let Some(m) = presets::method(id) {
+            let badge = if n == 0 { t!("Önerilen", "Recommended") } else { String::new() };
+            main.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s(badge) });
+            ids.push(m.id.into());
+        }
+    }
+    for m in presets::ALL.iter().filter(|m| !isp.methods.contains(&m.id)) {
+        more.push(Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s("") });
+        ids.push(m.id.into());
+    }
+    for c in &cfg.custom_methods {
+        more.push(Choice {
+            id: s(c.id.as_str()),
+            title: s(t!("Özel · {}", "Custom · {}", c.name)),
+            subtitle: s(c.config.short_summary(en)),
+            badge: s(""),
+        });
+        ids.push(c.id.clone());
+    }
+    let index = ids.iter().position(|i| i.eq_ignore_ascii_case(&cfg.method)).unwrap_or(0);
+    let header = if isp.id == "general" {
+        t!("ÖNERİLEN", "RECOMMENDED")
+    } else {
+        upper(&t!("{} için", "For {}", isp.label(en)), en)
+    };
+    MethodList { header, main, more, ids, index }
+}
+
+/// Mac: proxy motorunun yontemleri. Saglayiciya gore oneri yok (yalnizca Kablonet olculdu);
+/// TLS kaydini bolen ilk iki yontem onerilen bolumde.
+#[cfg(target_os = "macos")]
+fn method_list(cfg: &AppConfig, _isp_index: usize, en: bool) -> MethodList {
+    let (mut main, mut more, mut ids) = (Vec::new(), Vec::new(), Vec::new());
+    for (n, m) in proxy::presets::METHODS.iter().enumerate() {
+        let badge = if n == 0 { t!("Önerilen", "Recommended") } else { String::new() };
+        let choice = Choice { id: s(m.id), title: s(m.label(en)), subtitle: s(m.about(en)), badge: s(badge) };
+        if n < 2 { main.push(choice) } else { more.push(choice) }
+        ids.push(m.id.to_owned());
+    }
+    let active = proxy::presets::method_or_default(&cfg.proxy_method).id;
+    let index = ids.iter().position(|i| i == active).unwrap_or(0);
+    MethodList { header: t!("ÖNERİLEN", "RECOMMENDED"), main, more, ids, index }
+}
+
+#[cfg(windows)]
+fn method_name(cfg: &AppConfig) -> String {
+    cfg.active_method().name
+}
+
+#[cfg(target_os = "macos")]
+fn method_name(cfg: &AppConfig) -> String {
+    proxy::presets::method_or_default(&cfg.proxy_method).label(i18n::english()).into()
+}
+
+#[cfg(windows)]
+fn set_method(cfg: &mut AppConfig, id: String) {
+    cfg.method = id;
+}
+
+#[cfg(target_os = "macos")]
+fn set_method(cfg: &mut AppConfig, id: String) {
+    cfg.proxy_method = id;
+}
+
 fn category_title(id: &str) -> String {
     match id {
         "discord" => "Discord".into(),
@@ -814,7 +884,16 @@ fn parse_custom_dns(name: &str, address: &str, bootstrap: &str) -> Result<Custom
 
 // ================================================================ pencere
 
-pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), slint::PlatformError> {
+/// Ikinci acilisi bildiren olay (Windows). Mac'te uygulamayi tek ornek tutan macOS'tur.
+#[cfg(windows)]
+pub type ShowEvent = windows_sys::Win32::Foundation::HANDLE;
+#[cfg(not(windows))]
+pub type ShowEvent = ();
+
+pub fn run(show_event: ShowEvent) -> Result<(), slint::PlatformError> {
+    // Mac: yerli pencere cubugu (trafik isiklari) icin pencere ozellikleri Slint'ten once secilir.
+    #[cfg(target_os = "macos")]
+    crate::macapp::select_backend()?;
     let app = AppWindow::new()?;
     let ctx = Rc::new(Ctx::new(&app, prefs::load(), std::env::var_os("GDPI3_TEST").is_some()));
     CTX.with(|c| *c.borrow_mut() = Some(ctx.clone()));
@@ -824,6 +903,8 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
     ctx.apply_prefs();
     ctx.apply_engine();
     app.global::<AppState>().set_version(s(shared::VERSION));
+    #[cfg(target_os = "macos")]
+    app.global::<AppState>().set_mac(true);
 
     bind_callbacks(&app);
 
@@ -857,40 +938,46 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
     *ctx.client.borrow_mut() = Some(client);
 
     // Ikinci kez acilinca var olan pencere one gelir; tepsiden "Cik" denince pencere de kapanir.
-    let quit = winsys::quit_event() as usize;
-    let show = show_event as usize;
-    std::thread::Builder::new()
-        .name("tek-ornek".into())
-        .stack_size(64 * 1024)
-        .spawn(move || {
-            use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
-            use windows_sys::Win32::System::Threading::{INFINITE, WaitForMultipleObjects};
-            let handles = [quit as windows_sys::Win32::Foundation::HANDLE, show as _];
-            loop {
-                let r = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, INFINITE) };
-                if r == WAIT_OBJECT_0 {
-                    let _ = slint::invoke_from_event_loop(|| with_ctx(|c| c.quit_now()));
-                    return;
+    #[cfg(windows)]
+    {
+        let quit = winsys::quit_event() as usize;
+        let show = show_event as usize;
+        std::thread::Builder::new()
+            .name("tek-ornek".into())
+            .stack_size(64 * 1024)
+            .spawn(move || {
+                use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+                use windows_sys::Win32::System::Threading::{INFINITE, WaitForMultipleObjects};
+                let handles = [quit as windows_sys::Win32::Foundation::HANDLE, show as _];
+                loop {
+                    let r = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, INFINITE) };
+                    if r == WAIT_OBJECT_0 {
+                        let _ = slint::invoke_from_event_loop(|| with_ctx(|c| c.quit_now()));
+                        return;
+                    }
+                    if r != WAIT_OBJECT_0 + 1 {
+                        return;
+                    }
+                    let _ = slint::invoke_from_event_loop(|| {
+                        with_ctx(|c| {
+                            if let Some(app) = c.ui() {
+                                let _ = app.show();
+                                app.window().with_winit_window(|w| {
+                                    w.set_minimized(false);
+                                    w.focus_window();
+                                });
+                            }
+                        })
+                    });
                 }
-                if r != WAIT_OBJECT_0 + 1 {
-                    return;
-                }
-                let _ = slint::invoke_from_event_loop(|| {
-                    with_ctx(|c| {
-                        if let Some(app) = c.ui() {
-                            let _ = app.show();
-                            app.window().with_winit_window(|w| {
-                                w.set_minimized(false);
-                                w.focus_window();
-                            });
-                        }
-                    })
-                });
-            }
-        })
-        .ok();
+            })
+            .ok();
+    }
+    #[cfg(not(windows))]
+    let _ = show_event;
 
     // Kapatinca tepside kalinacaksa tepsi sureci simdiden acilsin.
+    #[cfg(windows)]
     if ctx.prefs.borrow().close_to_tray && !ctx.test_mode {
         spawn_tray();
     }
@@ -914,28 +1001,74 @@ pub fn run(show_event: windows_sys::Win32::Foundation::HANDLE) -> Result<(), sli
         }
     }
 
-    app.show()?;
+    // Mac: oturum acilisinda (`--background`) pencere acilmaz, uygulama menu cubugunda bekler.
+    let start_hidden = cfg!(target_os = "macos") && std::env::args().any(|a| a == "--background");
+    if !start_hidden {
+        app.show()?;
+    }
     // Slint winit penceresini olay dongusu baslayinca olusturur; o ana kadar HWND yoktur.
     // Yuvarlak kose, golge, simge ve koyu cerceve pencere olusur olusmaz uygulanir.
-    let styler = Rc::new(Timer::default());
-    let tries = Cell::new(0);
-    let weak = app.as_weak();
-    let keep = Rc::downgrade(&styler);
-    styler.start(TimerMode::Repeated, Duration::from_millis(10), move || {
-        tries.set(tries.get() + 1);
-        let done = weak.upgrade().is_none_or(|app| style_window(&app));
-        if done || tries.get() > 200 {
-            if let Some(t) = keep.upgrade() {
-                t.stop();
+    #[cfg(windows)]
+    let styler = {
+        let styler = Rc::new(Timer::default());
+        let tries = Cell::new(0);
+        let weak = app.as_weak();
+        let keep = Rc::downgrade(&styler);
+        styler.start(TimerMode::Repeated, Duration::from_millis(10), move || {
+            tries.set(tries.get() + 1);
+            let done = weak.upgrade().is_none_or(|app| style_window(&app));
+            if done || tries.get() > 200 {
+                if let Some(t) = keep.upgrade() {
+                    t.stop();
+                }
             }
-        }
-    });
+        });
+        styler
+    };
+    // Mac: menu cubugu simgesi, Dock'tan geri acma.
+    #[cfg(target_os = "macos")]
+    crate::macapp::install();
+    #[cfg(windows)]
     slint::run_event_loop()?;
+    // Mac: pencere gizlenince de uygulama menu cubugunda calismaya devam eder.
+    #[cfg(target_os = "macos")]
+    slint::run_event_loop_until_quit()?;
+    #[cfg(windows)]
     drop(styler);
     CTX.with(|c| *c.borrow_mut() = None);
     Ok(())
 }
 
+/// Mac menu cubugu: Baglan / Kes.
+#[cfg(target_os = "macos")]
+pub fn menu_power_toggle() {
+    with_ctx(|c| c.power_toggle());
+}
+
+/// Mac: menu cubugu, Dock ya da yeniden acilis pencereyi one getirir.
+#[cfg(target_os = "macos")]
+pub fn show_window() {
+    with_ctx(|c| {
+        if c.closing.get() {
+            return;
+        }
+        if let Some(app) = c.ui() {
+            let _ = app.show();
+            app.window().with_winit_window(|w| {
+                w.set_minimized(false);
+                w.focus_window();
+            });
+        }
+    });
+}
+
+/// Mac menu cubugu: uygulamadan cik (sistem proxy ayari main'deki kapanista geri alinir).
+#[cfg(target_os = "macos")]
+pub fn quit_app() {
+    with_ctx(|c| c.quit_now());
+}
+
+#[cfg(windows)]
 fn spawn_tray() {
     if let Ok(exe) = std::env::current_exe() {
         let _ = std::process::Command::new(exe).arg("--tray").spawn();
@@ -948,9 +1081,12 @@ fn bind_callbacks(app: &AppWindow) {
         move || {
             // Sol tus gercekten basili degilse suruklemeye girilmez: birakildiktan sonra baslayan
             // surukleme pencereyi bir sonraki tiklamaya kadar imlece yapistirir ve dongu durur.
-            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
-            if unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } as u16 & 0x8000 == 0 {
-                return;
+            #[cfg(windows)]
+            {
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+                if unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } as u16 & 0x8000 == 0 {
+                    return;
+                }
             }
             if let Some(app) = weak.upgrade() {
                 app.window().with_winit_window(|w| {
@@ -998,7 +1134,7 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_select_method(|i| {
         with_ctx(|c| {
             let Some(id) = c.method_ids.borrow().get(i as usize).cloned() else { return };
-            c.edit(|cfg| cfg.method = id);
+            c.edit(|cfg| set_method(cfg, id));
         })
     });
     st.on_set_dns_mode(|i| {
@@ -1167,6 +1303,7 @@ fn bind_callbacks(app: &AppWindow) {
 
 /// Win11'de cercevesiz pencereye yuvarlak kose, DWM golgesi ve simge verir. Pencere henuz
 /// olusmadiysa false doner.
+#[cfg(windows)]
 fn style_window(app: &AppWindow) -> bool {
     use windows_sys::Win32::Graphics::Dwm::{
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
@@ -1192,6 +1329,7 @@ fn style_window(app: &AppWindow) -> bool {
     true
 }
 
+#[cfg(windows)]
 fn hwnd_of(app: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     app.window()

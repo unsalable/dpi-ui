@@ -20,11 +20,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Basarisiz testlerin ozeti uyari (annotation) olarak da yazilir: gunlugu okumak
       # oturum ister, uyarilar herkese acik API'den okunur.
-      - name: Testler (proxy motoru, sifreli DNS)
+      - name: Testler (proxy motoru, sifreli DNS, Mac hizmeti)
         shell: bash
         run: |
           set -o pipefail
-          if ! cargo test -p proxy -p dnsclient 2>&1 | tee test.log; then
+          if ! cargo test -p proxy -p dnsclient -p macservice -p shared 2>&1 | tee test.log; then
             { sed -n '/^failures:$/,/^test result/p' test.log; grep -E -A8 '^error(\[|:)' test.log; } | head -80 > fail.txt
             echo "::error title=Testler basarisiz::$(sed -e 's/%/%25/g' -e 's/\r//g' fail.txt | awk 'BEGIN { ORS = "%0A" } { print }')"
             exit 1
@@ -55,3 +55,26 @@ jobs:
         with:
           name: mac-system
           path: perf/out/mac-system
+
+  # Mac uygulamasi: .app + .dmg paketi, gercek macOS'ta acilis, ekran goruntuleri, cikis.
+  uygulama:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Paket (.app ve .dmg)
+        run: bash installer/mac/package.sh
+      - name: Uygulamayi ac ve dene
+        run: bash perf/mac-app-test.sh "build/mac/DPI UI.app" perf/out/mac-app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-app
+          path: perf/out/mac-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DPI-UI-Mac
+          path: build/DPI-UI-Mac.dmg

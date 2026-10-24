@@ -100,7 +100,12 @@ pub const METHODS: &[Method] = &[TLS_RECORD, TLS_RECORD_DISORDER, DISORDER, DISO
 pub const DEFAULT_ID: &str = TLS_RECORD.id;
 
 pub fn method(id: &str) -> Option<&'static Method> {
-    METHODS.iter().find(|m| m.id == id)
+    METHODS.iter().find(|m| m.id.eq_ignore_ascii_case(id))
+}
+
+/// Kimlik bos ya da bilinmiyorsa varsayilan yontem.
+pub fn method_or_default(id: &str) -> &'static Method {
+    method(id).unwrap_or(&METHODS[0])
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ pub mod i18n;
 pub mod ipc;
 pub mod migrate;
 pub mod paths;
+#[cfg(windows)]
 pub mod pipeio;
 pub mod update;
 

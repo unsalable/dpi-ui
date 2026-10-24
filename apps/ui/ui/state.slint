@@ -36,6 +36,8 @@ export struct BenchItem {
 export global AppState {
     // ---------------------------------------------------------------- durum
     in-out property <PowerState> power: PowerState.off;
+    /// Mac surumu: pencere cubugu macOS'un, Windows'a ozgu satirlar gizli, metinler Mac'e gore.
+    in-out property <bool> mac: false;
     in-out property <bool> service-missing: false;
     in-out property <string> status-title: @tr("Kapalı");
     in-out property <string> status-sub: @tr("Bağlanmak için dokun");

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/service", "apps/ui", "crates/dnsclient", "crates/engine", "crates/proxy", "crates/shared", "crates/windivert", "tools/release"]
+members = ["apps/service", "apps/ui", "crates/dnsclient", "crates/engine", "crates/macservice", "crates/proxy", "crates/shared", "crates/windivert", "tools/release"]
 
 [workspace.package]
 version = "3.1.2"

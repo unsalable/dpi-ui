@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Language {
-    /// Windows'un arayuz dili Turkce ise Turkce, degilse Ingilizce.
+    /// Sistemin (Windows / macOS) arayuz dili Turkce ise Turkce, degilse Ingilizce.
     #[default]
     System,
     Turkish,
@@ -21,15 +21,44 @@ impl Language {
         match self {
             Self::Turkish => false,
             Self::English => true,
-            Self::System => !windows_is_turkish(),
+            Self::System => !system_is_turkish(),
         }
     }
 }
 
-fn windows_is_turkish() -> bool {
+#[cfg(windows)]
+fn system_is_turkish() -> bool {
     use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
     const LANG_TURKISH: u16 = 0x1F;
     (unsafe { GetUserDefaultUILanguage() } & 0x3FF) == LANG_TURKISH
+}
+
+/// macOS: tercih edilen dillerin ilki (`AppleLanguages`, orn. "tr-TR"). Surec basina bir kez okunur.
+#[cfg(target_os = "macos")]
+fn system_is_turkish() -> bool {
+    static TURKISH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TURKISH.get_or_init(|| {
+        let out = std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLanguages"]).output();
+        match out {
+            Ok(o) if o.status.success() => first_language_is_turkish(&String::from_utf8_lossy(&o.stdout)),
+            _ => std::env::var("LANG").is_ok_and(|l| l.starts_with("tr")),
+        }
+    })
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn system_is_turkish() -> bool {
+    std::env::var("LANG").is_ok_and(|l| l.starts_with("tr"))
+}
+
+/// `defaults read -g AppleLanguages` ciktisinin ("(\n    \"tr-TR\",\n ...)") ilk dili Turkce mi?
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn first_language_is_turkish(plist: &str) -> bool {
+    plist
+        .split(|c: char| c == '(' || c == ',' || c == '\n')
+        .map(|s| s.trim().trim_matches('"'))
+        .find(|s| !s.is_empty())
+        .is_some_and(|l| l == "tr" || l.starts_with("tr-") || l.starts_with("tr_"))
 }
 
 static ENGLISH: AtomicBool = AtomicBool::new(false);
@@ -65,6 +94,14 @@ mod tests {
         assert_eq!(crate::t!("{n} site", "{n} sites"), "3 site");
         assert_eq!(crate::t!("{} · {}", "{} · {}", "a", n), "a · 3");
         assert!(!english());
+    }
+
+    #[test]
+    fn reads_the_first_mac_language() {
+        assert!(first_language_is_turkish("(\n    \"tr-TR\",\n    \"en-US\"\n)\n"));
+        assert!(first_language_is_turkish("(\n    tr\n)"));
+        assert!(!first_language_is_turkish("(\n    \"en-TR\",\n    \"tr-TR\"\n)"));
+        assert!(!first_language_is_turkish("(\n)"));
     }
 
     #[test]

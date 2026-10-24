@@ -9,6 +9,8 @@ description = "Servis ve arayuzun ortak dili: ayar semasi, DNS hazirlari, IPC me
 engine = { path = "../engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Globalization",

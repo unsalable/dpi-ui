@@ -9,9 +9,29 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use shared::ipc::{self, ClientMessage, Event, Request, Response, ServerMessage, StateSnapshot};
+#[cfg(windows)]
 use shared::pipeio::{PipeHandle, PipeWriter};
 
+#[cfg(windows)]
+type Writer = PipeWriter;
+#[cfg(target_os = "macos")]
+type Writer = std::os::unix::net::UnixStream;
+
+/// Servise baglanir: (okuyucu, yazici).
+#[cfg(windows)]
+fn connect() -> std::io::Result<(impl std::io::Read, Writer)> {
+    PipeHandle::connect(&pipe_name(), 1000)?.split()
+}
+
+/// Mac: uygulamanin icindeki hizmetin Unix soketi.
+#[cfg(target_os = "macos")]
+fn connect() -> std::io::Result<(std::os::unix::net::UnixStream, Writer)> {
+    let s = std::os::unix::net::UnixStream::connect(macservice::socket_path())?;
+    Ok((s.try_clone()?, s))
+}
+
 /// Servisin pipe adi. Testler (`GDPI3_TEST`) `GDPI3_PIPE` ile kendi sahte servislerine baglanir.
+#[cfg(windows)]
 fn pipe_name() -> String {
     std::env::var_os("GDPI3_TEST")
         .and_then(|_| std::env::var("GDPI3_PIPE").ok())
@@ -28,7 +48,7 @@ pub enum Incoming {
 type Callback = Box<dyn FnOnce(Response) + Send>;
 
 struct Inner {
-    writer: Mutex<Option<PipeWriter>>,
+    writer: Mutex<Option<Writer>>,
     next: AtomicU64,
     pending: Mutex<HashMap<u64, Callback>>,
 }
@@ -75,7 +95,7 @@ impl Client {
     fn run(&self, name: &str, on: impl Fn(Incoming)) {
         let mut announced_down = false;
         loop {
-            let pipe = match PipeHandle::connect(&pipe_name(), 1000) {
+            let (reader, writer) = match connect() {
                 Ok(p) => p,
                 Err(_) => {
                     if !announced_down {
@@ -86,7 +106,6 @@ impl Client {
                     continue;
                 }
             };
-            let Ok((reader, writer)) = pipe.split() else { continue };
             *self.inner.writer.lock().unwrap() = Some(writer);
 
             self.send(Request::Hello { client: name.into(), protocol: ipc::PROTOCOL_VERSION });
