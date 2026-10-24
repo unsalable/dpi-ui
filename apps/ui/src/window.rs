@@ -680,6 +680,46 @@ impl Ctx {
         });
     }
 
+    /// Mac: yontemleri bu hatta dener; servis en iyisini secip kaydeder (ayar olayi gelir).
+    fn find_method(&self) {
+        let (Some(app), Some(client)) = (self.ui(), self.client()) else { return };
+        if app.global::<AppState>().get_find_running() {
+            return;
+        }
+        app.global::<AppState>().set_find_running(true);
+        client.request(Request::FindMethod, |r| {
+            let _ = slint::invoke_from_event_loop(move || {
+                with_ctx(|c| {
+                    if let Some(app) = c.ui() {
+                        app.global::<AppState>().set_find_running(false);
+                    }
+                    match r {
+                        Response::MethodSearch { best, blocked, results } => {
+                            let picked = best.and_then(|id| results.into_iter().find(|t| t.id == id));
+                            let text = match (blocked, picked) {
+                                (false, _) => t!(
+                                    "Bu hatta engel görünmüyor; yöntem değiştirilmedi.",
+                                    "No blocking detected on this connection; the method wasn't changed."
+                                ),
+                                (true, Some(t)) => t!(
+                                    "{} seçildi: {}/{} engelli site açıldı.",
+                                    "{} selected: {}/{} blocked sites opened.",
+                                    t.name,
+                                    t.opened,
+                                    t.total
+                                ),
+                                (true, None) => t!("Hiçbir yöntem engelli siteleri açamadı.", "No method could open the blocked sites."),
+                            };
+                            c.toast(&text, false);
+                        }
+                        Response::Error { message } => c.toast(&message, true),
+                        _ => {}
+                    }
+                })
+            });
+        });
+    }
+
     fn add_host(&self, host: &str, excluded: bool) -> String {
         let Some(name) = engine::scope::normalize(host) else {
             return t!("Geçerli bir alan adı gir (örn. site.com).", "Enter a valid domain (e.g. site.com).");
@@ -1179,6 +1219,7 @@ fn bind_callbacks(app: &AppWindow) {
         })
     });
     st.on_run_bench(|| with_ctx(|c| c.run_bench()));
+    st.on_find_method(|| with_ctx(|c| c.find_method()));
     st.on_use_bench(|id| {
         let id = id.to_string();
         with_ctx(|c| {

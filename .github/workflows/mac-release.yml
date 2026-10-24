@@ -1,0 +1,38 @@
+name: Mac yayini
+
+# Mac paketini (DPI-UI-Mac.dmg) tam iyilestirmeyle derleyip GitHub yayinina ekler.
+# - Elle: etiket verilir; yayin yoksa on surum olarak olusturulur (Windows guncelleyicisi on
+#   surumleri ve Windows dosyasi olmayan yayinlari hic gormez).
+# - Bir yayin yayimlaninca (release.ps1) Mac paketi o yayina da eklenir.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Etiket (or. v3.1.2-mac.1); yoksa bu daldan olusturulur"
+        required: true
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Paket
+        run: bash installer/mac/package.sh
+      - name: Yayina ekle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "DPI UI ${TAG#v} (Mac)" --notes-file installer/mac/RELEASE_NOTES.md
+          fi
+          gh release upload "$TAG" build/DPI-UI-Mac.dmg --clobber

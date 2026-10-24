@@ -42,6 +42,15 @@ msgstr "Starts with Windows"
 msgid "Mac açılınca başlar"
 msgstr "Starts with your Mac"
 
+msgid "Engelli siteleri her yöntemle dener, açanı seçer."
+msgstr "Tries blocked sites with every method and picks the one that opens them."
+
+msgid "Deneniyor…"
+msgstr "Trying…"
+
+msgid "En iyi yöntemi bul"
+msgstr "Find the best method"
+
 msgid "Elle başlar"
 msgstr "Starts manually"
 

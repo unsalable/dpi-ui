@@ -70,6 +70,8 @@ export global AppState {
     in-out property <bool> dns-skip-vpn: true;
     in-out property <[BenchItem]> bench;
     in-out property <bool> bench-running;
+    /// Mac: "En iyi yontemi bul" suruyor.
+    in-out property <bool> find-running;
 
     // ---------------------------------------------------------------- siteler
     /// 0 = akilli liste, 1 = tum trafik
@@ -114,6 +116,7 @@ export global AppState {
     callback add-custom-dns(string, string, string) -> string;
     callback remove-custom-dns(string);
     callback run-bench();
+    callback find-method();
     callback use-bench(string);
     callback set-scope-mode(int);
     callback set-learning(bool);

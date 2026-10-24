@@ -39,6 +39,8 @@ pub enum Request {
     /// Indirilip dogrulanmis guncellemeyi simdi kur ("Otomatik yukle" kapaliyken kullanici ister).
     /// Kurulumu servis yapar; Windows onay sormaz.
     InstallUpdate,
+    /// Mac: hazir yontemleri engelli bilinen sitelerde dener, en iyisini secip kaydeder (~10 sn).
+    FindMethod,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +101,17 @@ pub struct BenchEntry {
     pub error: Option<String>,
 }
 
+/// Yontem aramasinda bir yontemin sonucu.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MethodTrial {
+    pub id: String,
+    pub name: String,
+    /// Acilan engelli site sayisi.
+    pub opened: u32,
+    pub total: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Conflict {
@@ -129,6 +142,9 @@ pub enum Response {
     Stats { stats: StatsSnapshot },
     Logs { lines: Vec<String> },
     DnsBench { results: Vec<BenchEntry> },
+    /// `blocked`: yontemsiz denemede siteler acilmadi (hatta engel var). `best`: secilen yontem;
+    /// engel yoksa ya da hicbir yontem yetmediyse bos.
+    MethodSearch { best: Option<String>, blocked: bool, results: Vec<MethodTrial> },
     Error { message: String },
 }
 

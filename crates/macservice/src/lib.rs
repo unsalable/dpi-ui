@@ -6,6 +6,7 @@ pub mod bench;
 pub mod controller;
 #[macro_use]
 pub mod log;
+pub mod search;
 #[cfg(unix)]
 pub mod server;
 pub mod store;

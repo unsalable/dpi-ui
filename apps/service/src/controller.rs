@@ -198,6 +198,9 @@ impl Controller {
                 Some(Err(message)) => Response::Error { message },
                 _ => Response::Ok,
             },
+            Request::FindMethod => Response::Error {
+                message: t!("Bu özellik yalnızca Mac sürümünde var.", "This feature is only in the Mac version."),
+            },
             Request::BenchDns => Response::DnsBench {
                 results: crate::dns::bench::run_all()
                     .into_iter()

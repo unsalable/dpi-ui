@@ -20,7 +20,7 @@ use shared::t;
 use shared::update::{UpdateState, UpdateStatus, Version};
 
 use crate::sysproxy::SystemProxy;
-use crate::{error, info, updates, warn};
+use crate::{error, info, search, updates, warn};
 
 /// Kendiliginden guncelleme denetimi en sik bu kadar arayla.
 const UPDATE_INTERVAL_MS: u64 = 6 * 3600 * 1000;
@@ -31,6 +31,8 @@ pub struct Controller {
     data_dir: PathBuf,
     /// Tercih edilen proxy portu (0: rastgele; testler).
     port: u16,
+    /// "En iyi yontemi bul" istekleri (testlerde sahte).
+    fetch: Arc<search::Fetch>,
 }
 
 struct Inner {
@@ -85,6 +87,11 @@ pub fn pac_scope(cfg: &AppConfig) -> PacScope {
 
 impl Controller {
     pub fn new(config: AppConfig, sys: Box<dyn SystemProxy>, data_dir: PathBuf, port: u16) -> Arc<Self> {
+        Self::with_fetch(config, sys, data_dir, port, Arc::new(search::curl))
+    }
+
+    /// `fetch`: yontem aramasinin istekleri (testlerde gercek siteler yerine sahte).
+    pub fn with_fetch(config: AppConfig, sys: Box<dyn SystemProxy>, data_dir: PathBuf, port: u16, fetch: Arc<search::Fetch>) -> Arc<Self> {
         Arc::new_cyclic(|me| Controller {
             inner: Mutex::new(Inner {
                 status: EngineStatus { method_name: active_method(&config).label(shared::i18n::english()).into(), dns_name: config.active_dns().display_name(), ..Default::default() },
@@ -99,6 +106,7 @@ impl Controller {
             me: me.clone(),
             data_dir,
             port,
+            fetch,
         })
     }
 
@@ -152,6 +160,7 @@ impl Controller {
             Request::ForgetLearned { .. } | Request::ClearLearned => Response::Ok,
             Request::GetLogs => Response::Logs { lines: crate::log::lines() },
             Request::BenchDns => Response::DnsBench { results: crate::bench::run_all() },
+            Request::FindMethod => self.find_method(),
             Request::CheckUpdate { forced } => {
                 self.check_update(forced);
                 Response::Ok
@@ -306,6 +315,31 @@ impl Controller {
         let status = inner.status.clone();
         broadcast(&mut inner, Event::Engine { status });
         Ok(())
+    }
+
+    /// Yontemleri bu hatta dener; engel varsa en iyisini secip kaydeder.
+    pub fn find_method(&self) -> Response {
+        let cfg = self.config();
+        let resolver = match resolver(&cfg) {
+            Ok(r) => r,
+            Err(message) => return Response::Error { message },
+        };
+        let out = search::run(resolver, self.fetch.clone(), shared::i18n::english());
+        let summary: Vec<String> = out.trials.iter().map(|t| format!("{} {}/{}", t.id, t.opened, t.total)).collect();
+        info!("Yöntem araması: yöntemsiz {}/{}, {}", out.baseline, search::TARGETS.len(), summary.join(", "));
+        if !out.online && out.baseline == 0 && out.best().is_none() {
+            return Response::Error { message: t!("İnternete ulaşılamadı; bağlantını kontrol et.", "Couldn't reach the internet; check your connection.") };
+        }
+        let blocked = out.blocked();
+        let best = if blocked { out.best().map(|t| t.id.clone()) } else { None };
+        if let Some(id) = &best {
+            let mut c = cfg;
+            c.proxy_method = id.clone();
+            if let Err(message) = self.set_config(c) {
+                return Response::Error { message };
+            }
+        }
+        Response::MethodSearch { best, blocked, results: out.trials }
     }
 
     fn set_update(&self, state: UpdateState, url: Option<String>, finished: bool) {

@@ -314,6 +314,20 @@ export component MethodPage inherits SubPage {
     property <bool> picked-in-more: AppState.method-index >= AppState.methods-main.length;
     property <bool> show-more: root.more-open || root.picked-in-more;
 
+    // Mac: saglayiciya gore oneri yerine yontemler bu hatta denenir.
+    if AppState.mac: Group {
+        footer: @tr("Engelli siteleri her yöntemle dener, açanı seçer.");
+        ActionRow {
+            first: true;
+            last: true;
+            text: AppState.find-running ? @tr("Deneniyor…") : @tr("En iyi yöntemi bul");
+            busy: AppState.find-running;
+            activated => {
+                AppState.find-method();
+            }
+        }
+    }
+
     if !AppState.mac: Group {
         PickerRow {
             first: true;

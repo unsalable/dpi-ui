@@ -52,6 +52,27 @@ grep -q "Enabled: No" <<<"$after" || bad "cikista sistem proxy ayari geri alinma
 
 cp "$data/logs/service.log" "$out/" 2>/dev/null
 cp "$data/config.json" "$out/" 2>/dev/null
+
+# Sayfa goruntuleri (Turkce): ayri veri klasoru, otomatik baglanti kapali; GDPI3_PAGE
+# "derinlik:altsayfa" (0:0 ana ekran, 1:0 ayarlar, 2:1 yontem, 2:2 DNS, 2:3 siteler, 2:4 genel).
+pages=$(mktemp -d)
+printf '{"autoConnect": false, "language": "turkish"}' >"$pages/config.json"
+shot() { # dosya, sayfa, tema (1 koyu, 2 acik)
+    printf '{"theme": %s, "trayAtLogin": false, "autorunInitialized": true, "v1Checked": true, "language": "turkish"}' "$3" >"$pages/ui.json"
+    GDPI3_DATA_DIR="$pages" GDPI3_TEST=1 GDPI3_PAGE="$2" "$app/Contents/MacOS/DPI UI" &
+    local pid=$!
+    sleep 4
+    screencapture -x "$out/$1.png"
+    kill "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    sleep 0.5
+}
+shot 3-ana-koyu 0:0 1
+shot 4-ayarlar 1:0 2
+shot 5-yontem 2:1 2
+shot 6-dns 2:2 2
+shot 7-siteler 2:3 2
+shot 8-genel 2:4 2
 note "--- hizmet gunlugu"
 cat "$out/service.log" 2>/dev/null | tee -a "$out/summary.txt"
 exit "$fail"

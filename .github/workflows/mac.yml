@@ -59,6 +59,10 @@ jobs:
   # Mac uygulamasi: .app + .dmg paketi, gercek macOS'ta acilis, ekran goruntuleri, cikis.
   uygulama:
     runs-on: macos-26
+    # Denemelerde hizli derleme (LTO kapali); yayin paketi tam iyilestirmeyle mac-release.yml'de.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "off"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
