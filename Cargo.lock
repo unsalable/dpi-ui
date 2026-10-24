@@ -890,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "dnsclient"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "rustls",
  "webpki-roots",
@@ -977,7 +977,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engine"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -1621,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "goodbyedpi3-service"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "dnsclient",
  "engine",
@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "goodbyedpi3-ui"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "block2 0.6.2",
  "engine",
@@ -2721,7 +2721,7 @@ dependencies = [
 
 [[package]]
 name = "macservice"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "dnsclient",
  "engine",
@@ -3732,7 +3732,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "proxy"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "dnsclient",
  "engine",
@@ -3916,7 +3916,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "release-tool"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "ring",
  "serde_json",
@@ -4212,7 +4212,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "engine",
  "serde",
@@ -5608,7 +5608,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windivert"
-version = "3.1.2"
+version = "3.1.3"
 dependencies = [
  "windows-sys 0.61.2",
 ]
