@@ -38,7 +38,10 @@ export global Theme {
 }
 
 export global Type {
-    out property <string> display: "Segoe UI Variable Display";
+    /// Yazi aileleri. Mac'te Rust tarafi degistirir: Segoe orada yok ve yedek yazi tipinde buyuk
+    /// harflerin isaretleri (Ö, İ, Ü, Ğ) satir kutusunun ustune tasip kirpiliyordu.
+    in-out property <string> text: "Segoe UI Variable Text";
+    in-out property <string> display: "Segoe UI Variable Display";
     out property <length> large-title: 28px;
     out property <length> title: 24px;
     out property <length> headline: 15px;

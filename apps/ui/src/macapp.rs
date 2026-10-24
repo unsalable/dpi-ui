@@ -28,6 +28,12 @@ pub fn select_backend() -> Result<(), slint::PlatformError> {
         .select()
 }
 
+/// Arayuz yazi tipi. Buyuk harf isaretleri satir kutusuna sigmali: Slint'in yazilim cizicisi
+/// metni kendi kutusuyla kirpar. `GDPI3_FONT` denemeler icindir.
+pub fn ui_font() -> String {
+    std::env::var("GDPI3_FONT").unwrap_or_else(|_| "Helvetica Neue".into())
+}
+
 struct MenuBar {
     tray: TrayIcon,
     status: MenuItem,

@@ -57,8 +57,9 @@ cp "$data/config.json" "$out/" 2>/dev/null
 # "derinlik:altsayfa" (0:0 ana ekran, 1:0 ayarlar, 2:1 yontem, 2:2 DNS, 2:3 siteler, 2:4 genel).
 pages=$(mktemp -d)
 printf '{"autoConnect": false, "language": "turkish"}' >"$pages/config.json"
-shot() { # dosya, sayfa, tema (1 koyu, 2 acik)
+shot() { # dosya, sayfa, tema (1 koyu, 2 acik), [yazi tipi]
     printf '{"theme": %s, "trayAtLogin": false, "autorunInitialized": true, "v1Checked": true, "language": "turkish"}' "$3" >"$pages/ui.json"
+    if [ -n "${4:-}" ]; then export GDPI3_FONT="$4"; else unset GDPI3_FONT; fi
     GDPI3_DATA_DIR="$pages" GDPI3_TEST=1 GDPI3_PAGE="$2" "$app/Contents/MacOS/DPI UI" &
     local pid=$!
     sleep 4
@@ -73,6 +74,14 @@ shot 5-yontem 2:1 2
 shot 6-dns 2:2 2
 shot 7-siteler 2:3 2
 shot 8-genel 2:4 2
+
+# Yazi tipi denemesi (FONT_TRIALS="Ad1;Ad2"): buyuk harf isaretleri (Ö, İ, Ü) kirpiliyor mu?
+if [ -n "${FONT_TRIALS:-}" ]; then
+    IFS=';' read -ra fonts <<<"$FONT_TRIALS"
+    for f in "${fonts[@]}"; do
+        shot "font-$(echo "$f" | tr -cd 'A-Za-z0-9')" 2:1 2 "$f"
+    done
+fi
 note "--- hizmet gunlugu"
 cat "$out/service.log" 2>/dev/null | tee -a "$out/summary.txt"
 exit "$fail"

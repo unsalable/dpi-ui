@@ -947,7 +947,12 @@ pub fn run(show_event: ShowEvent) -> Result<(), slint::PlatformError> {
     ctx.apply_engine();
     app.global::<AppState>().set_version(s(shared::VERSION));
     #[cfg(target_os = "macos")]
-    app.global::<AppState>().set_mac(true);
+    {
+        app.global::<AppState>().set_mac(true);
+        let font = crate::macapp::ui_font();
+        app.global::<crate::Type>().set_text(s(font.as_str()));
+        app.global::<crate::Type>().set_display(s(font.as_str()));
+    }
 
     bind_callbacks(&app);
 

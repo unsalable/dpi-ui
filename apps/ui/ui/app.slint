@@ -6,7 +6,7 @@ import { Toast } from "widgets.slint";
 import { AppState, Choice, HostItem, BenchItem, CategoryItem } from "state.slint";
 import { HomePage, SettingsMenu, MethodPage, DnsPage, SitesPage, GeneralPage, AppearancePage, AboutPage } from "pages.slint";
 
-export { PowerState, Theme, Motion, AppState, Choice, HostItem, BenchItem, CategoryItem }
+export { PowerState, Theme, Type, Motion, AppState, Choice, HostItem, BenchItem, CategoryItem }
 
 export component AppWindow inherits Window {
     title: "DPI UI";
@@ -17,7 +17,7 @@ export component AppWindow inherits Window {
     /// Artinca tum pencere yeniden cizilir (Windows icerigi attiginda: simge durumundan donus vb.).
     in-out property <int> repaint-epoch;
     background: root.repaint-epoch >= 0 ? Theme.bg : Theme.bg;
-    default-font-family: "Segoe UI Variable Text";
+    default-font-family: Type.text;
     default-font-size: 14px;
 
     property <length> top-inset: AppState.mac ? 28px : 0px;
