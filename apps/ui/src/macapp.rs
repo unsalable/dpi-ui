@@ -128,6 +128,21 @@ pub fn show_state(power: PowerState, title: &str) {
     });
 }
 
+/// Pencere kapaninca uygulama da gizlenir (Cmd+H gibi). Etkin uygulamanin Dock simgesine
+/// tiklamak "etkinlesti" bildirimi uretmez; gizli uygulamaya tiklamak uretir ve pencere geri gelir.
+pub fn hide_app() {
+    if let Some(mtm) = objc2::MainThreadMarker::new() {
+        objc2_app_kit::NSApplication::sharedApplication(mtm).hide(None);
+    }
+}
+
+/// Menu cubugundan "ac": gizli uygulama once gorunur olmali.
+pub fn unhide_app() {
+    if let Some(mtm) = objc2::MainThreadMarker::new() {
+        objc2_app_kit::NSApplication::sharedApplication(mtm).unhide(None);
+    }
+}
+
 /// Bildirim merkezine gozlemci ekler (uygulama omru boyunca kalir).
 fn observe(name: &'static objc2_foundation::NSNotificationName, f: impl Fn() + 'static) {
     let block = RcBlock::new(move |_: NonNull<NSNotification>| f());

@@ -597,6 +597,7 @@ impl Ctx {
                 if let Some(app) = self.ui() {
                     let _ = app.hide();
                 }
+                crate::macapp::hide_app();
                 return;
             }
             self.quit_now();
@@ -1094,6 +1095,7 @@ pub fn show_window() {
         if c.closing.get() {
             return;
         }
+        crate::macapp::unhide_app();
         if let Some(app) = c.ui() {
             let _ = app.show();
             app.window().with_winit_window(|w| {
