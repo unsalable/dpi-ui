@@ -21,7 +21,12 @@ impl Resolve for MapResolver {
 }
 
 fn resolver() -> Arc<dyn Resolve> {
-    Arc::new(MapResolver(HashMap::from([(NAME.to_owned(), vec![IpAddr::V4(Ipv4Addr::LOCALHOST)])])))
+    let local = vec![IpAddr::V4(Ipv4Addr::LOCALHOST)];
+    Arc::new(MapResolver(HashMap::from([
+        (NAME.to_owned(), local.clone()),
+        (format!("cdn.{NAME}"), local.clone()),
+        ("haric.test.example".to_owned(), local),
+    ])))
 }
 
 fn start(desync: Desync) -> (Proxy, Arc<Mutex<Vec<Event>>>) {
@@ -120,6 +125,30 @@ fn connect_tunnel_delivers_every_method_intact() {
         assert_eq!(proxy.stats().desynced, u64::from(!desync.is_noop()), "{id}");
         proxy.stop();
     }
+}
+
+#[test]
+fn scope_limits_reshaping_to_listed_sites() {
+    let (port, rx) = echo_server();
+    let (proxy, events) = start(presets::TLS_RECORD.desync());
+    let mut scope = engine::Scope::default();
+    scope.targets.insert(NAME);
+    scope.excluded.insert("haric.test.example");
+    proxy.set_scope(Some(scope));
+    let send = |host: &str| {
+        let mut c = client(&proxy);
+        write!(c, "CONNECT {host}:{port} HTTP/1.1\r\n\r\n").unwrap();
+        assert!(read_head(&mut c).starts_with("HTTP/1.1 200"));
+        c.write_all(&hello()).unwrap();
+        c.shutdown(Shutdown::Write).unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    };
+    // Listede (alt alan adi da): bolunur. Listede degil ya da istisna: oldugu gibi.
+    assert_eq!(send(NAME).len(), hello().len() + 5);
+    assert_eq!(send(&format!("cdn.{NAME}")).len(), hello().len() + 5);
+    assert_eq!(send("127.0.0.1"), hello(), "listede olmayan site");
+    assert_eq!(send("haric.test.example"), hello(), "istisna");
+    assert_eq!(events.lock().unwrap().iter().filter(|e| matches!(e, Event::Desynced { .. })).count(), 2);
 }
 
 #[test]

@@ -91,11 +91,15 @@ jobs:
         run: bash installer/mac/package.sh
       - name: Uygulamayi ac ve dene
         run: bash perf/mac-app-test.sh "build/mac/DPI UI.app" perf/out/mac-app
+      - name: Roblox (HTTPS_PROXY ile proxy'den)
+        run: bash perf/mac-roblox-test.sh "build/mac/DPI UI.app" perf/out/mac-roblox
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mac-app
-          path: perf/out/mac-app
+          path: |
+            perf/out/mac-app
+            perf/out/mac-roblox
       - uses: actions/upload-artifact@v4
         with:
           name: DPI-UI-Mac

@@ -80,6 +80,14 @@ fn resolver(cfg: &AppConfig) -> Result<Arc<dyn Resolve>, String> {
 }
 
 /// PAC'in proxy'ye yonlendirecegi siteler (Windows'taki kapsamla ayni kural).
+/// Proxy'nin ilk mesaji parcalayacagi siteler (ortam degiskeniyle her seyini proxy'ye veren
+/// uygulamalarda listede olmayanlara dokunulmaz). Ogrenme yok.
+pub fn proxy_scope(cfg: &AppConfig) -> engine::Scope {
+    let mut scope = cfg.build_scope(Vec::<String>::new());
+    scope.learning = false;
+    scope
+}
+
 pub fn pac_scope(cfg: &AppConfig) -> PacScope {
     let cats: Vec<&str> = cfg.scope.categories.iter().map(String::as_str).collect();
     let mut targets: Vec<String> = Vec::new();
@@ -244,10 +252,11 @@ impl Controller {
         };
         let addr = proxy.local_addr();
         proxy.set_pac(Some(proxy::pac::script(addr, &pac_scope(&inner.config))));
+        proxy.set_scope(Some(proxy_scope(&inner.config)));
         inner.pac_version += 1;
         let url = Self::pac_url(inner, addr);
         inner.proxy = Some(proxy);
-        inner.sys.enable(&url).map_err(|e| t!("Sistem proxy ayarı yapılamadı: {e}", "Couldn't set the system proxy: {e}"))?;
+        inner.sys.enable(&url, addr).map_err(|e| t!("Sistem proxy ayarı yapılamadı: {e}", "Couldn't set the system proxy: {e}"))?;
         info!("Bağlandı: {addr}, yöntem {}, PAC {url}", active_method(&inner.config).id);
         inner.status = EngineStatus { state: EngineState::On, since_ms: Some(now_ms()), ..Self::names(&inner.config) };
         let status = inner.status.clone();
@@ -306,9 +315,10 @@ impl Controller {
             if pac_scope(&old) != pac_scope(&new) {
                 let addr = proxy.local_addr();
                 proxy.set_pac(Some(proxy::pac::script(addr, &pac_scope(&new))));
+                proxy.set_scope(Some(proxy_scope(&new)));
                 inner.pac_version += 1;
                 let url = Self::pac_url(&inner, addr);
-                if let Err(e) = inner.sys.enable(&url) {
+                if let Err(e) = inner.sys.enable(&url, addr) {
                     warn!("Yeni PAC adresi sisteme yazılamadı: {e}");
                 }
             }

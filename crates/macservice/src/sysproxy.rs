@@ -1,18 +1,25 @@
-//! Sistem proxy ayari: macOS'ta `networksetup` ile her etkin ag hizmetinin "otomatik proxy
-//! yapilandirmasi" PAC adresimize yonlenir. Onceki ayar diske yazilir; baglanti kesilince ya
-//! da uygulama cokup yeniden acilinca geri yuklenir.
+//! Sistem proxy ayari, iki yoldan:
+//! 1. `networksetup` ile her etkin ag hizmetinin "otomatik proxy yapilandirmasi" PAC adresimize
+//!    yonlenir. Safari, Chrome, Discord gibi sistem ayarina uyan uygulamalar bunu kullanir.
+//! 2. Oturumun ortam degiskenlerine (`launchctl setenv`) HTTPS_PROXY/HTTP_PROXY yazilir. Sistem
+//!    ayarina bakmayan ama bu degiskenlere uyan uygulamalar (olculdu: Roblox oyunu) bununla
+//!    proxy'ye gelir. Proxy yalnizca listedeki sitelere dokunur, gerisini oldugu gibi tasir.
+//!    Degiskenler baglandiktan sonra acilan uygulamalara gecer.
 //!
-//! GitHub'in Mac makinelerinde (yonetici kullanici) networksetup sudo istemeden calisti.
-//! Standart kullanicida "admin privileges" hatasi gelirse ayni komutlar macOS'un yonetici
-//! sifresi penceresiyle (osascript) bir kez daha denenir.
+//! Onceki ayarlar diske yazilir; baglanti kesilince ya da uygulama cokup yeniden acilinca geri
+//! yuklenir. GitHub'in Mac makinelerinde (yonetici kullanici) networksetup sudo istemeden calisti;
+//! standart kullanicida "admin privileges" hatasi gelirse ayni komutlar macOS'un yonetici sifresi
+//! penceresiyle (osascript) bir kez daha denenir.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 pub trait SystemProxy: Send {
-    /// Sistem bu PAC adresini kullansin. Ilk cagrida onceki ayar saklanir.
-    fn enable(&mut self, pac_url: &str) -> Result<(), String>;
+    /// Sistem bu PAC adresini, ortam degiskenleri de `proxy`'yi gostersin. Ilk cagrida onceki
+    /// ayar saklanir.
+    fn enable(&mut self, pac_url: &str, proxy: SocketAddr) -> Result<(), String>;
     /// Onceki ayari geri yukler. Etkin degilse bir sey yapmaz.
     fn disable(&mut self) -> Result<(), String>;
 }
@@ -21,7 +28,7 @@ pub trait SystemProxy: Send {
 pub struct Untouched;
 
 impl SystemProxy for Untouched {
-    fn enable(&mut self, _: &str) -> Result<(), String> {
+    fn enable(&mut self, _: &str, _: SocketAddr) -> Result<(), String> {
         Ok(())
     }
     fn disable(&mut self) -> Result<(), String> {
@@ -35,6 +42,39 @@ pub struct Saved {
     pub service: String,
     pub url: String,
     pub enabled: bool,
+}
+
+/// Bir ortam degiskeninin onceki degeri.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedEnv {
+    pub name: String,
+    pub value: Option<String>,
+}
+
+/// Diskteki durum (`sysproxy.json`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct State {
+    pub services: Vec<Saved>,
+    #[serde(default)]
+    pub env: Vec<SavedEnv>,
+}
+
+impl State {
+    /// Durum dosyasini okur; 3.1.2-mac.3 ve oncesinin bicimi (yalnizca hizmet listesi) da olur.
+    pub fn parse(text: &str) -> Option<State> {
+        serde_json::from_str(text).ok().or_else(|| serde_json::from_str::<Vec<Saved>>(text).ok().map(|services| State { services, env: Vec::new() }))
+    }
+}
+
+/// Uygulamalarin proxy icin okudugu degiskenler (curl ve turevleri hem buyuk hem kucuk harf okur).
+pub const PROXY_ENV: [&str; 4] = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"];
+pub const NO_PROXY_ENV: [&str; 2] = ["NO_PROXY", "no_proxy"];
+pub const NO_PROXY: &str = "localhost,127.0.0.1,::1,.local";
+
+/// Yazilacak degiskenler ve degerleri.
+pub fn env_values(proxy: SocketAddr) -> Vec<(&'static str, String)> {
+    let url = format!("http://{proxy}");
+    PROXY_ENV.iter().map(|n| (*n, url.clone())).chain(NO_PROXY_ENV.iter().map(|n| (*n, NO_PROXY.to_owned()))).collect()
 }
 
 /// `networksetup -listallnetworkservices`: ilk satir aciklama, `*` ile baslayanlar kapali.
@@ -69,6 +109,11 @@ pub fn is_ours(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") && url.contains(proxy::PAC_PATH)
 }
 
+/// Bizim proxy degiskenimiz mi? (Cokmeden kalan deger geri yuklenmez, silinir.)
+fn is_our_env(value: &str) -> bool {
+    value.starts_with("http://127.0.0.1:") || value == NO_PROXY
+}
+
 /// Geri yukleme komutlari (networksetup argumanlari).
 pub fn restore_commands(saved: &[Saved]) -> Vec<Vec<String>> {
     saved
@@ -79,6 +124,17 @@ pub fn restore_commands(saved: &[Saved]) -> Vec<Vec<String>> {
             } else {
                 vec!["-setautoproxystate".into(), s.service.clone(), "off".into()]
             }
+        })
+        .collect()
+}
+
+/// Ortam degiskenlerini geri yukleme komutlari (launchctl argumanlari).
+pub fn env_restore_commands(saved: &[SavedEnv]) -> Vec<Vec<String>> {
+    saved
+        .iter()
+        .map(|e| match &e.value {
+            Some(v) if !v.is_empty() && !is_our_env(v) => vec!["setenv".into(), e.name.clone(), v.clone()],
+            _ => vec!["unsetenv".into(), e.name.clone()],
         })
         .collect()
 }
@@ -103,11 +159,12 @@ pub fn admin_script(cmds: &[Vec<String>]) -> String {
 }
 
 const NETWORKSETUP: &str = "/usr/sbin/networksetup";
+const LAUNCHCTL: &str = "/bin/launchctl";
 
-/// macOS uygulamasi: `networksetup`.
+/// macOS uygulamasi: `networksetup` ve `launchctl`.
 pub struct Networksetup {
     state_file: PathBuf,
-    saved: Option<Vec<Saved>>,
+    saved: Option<State>,
 }
 
 impl Networksetup {
@@ -118,8 +175,7 @@ impl Networksetup {
     /// Onceki calisma sistem ayarini geri almadan bittiyse simdi geri alir.
     pub fn restore_stale(&mut self) -> Option<String> {
         let text = std::fs::read_to_string(&self.state_file).ok()?;
-        let saved: Vec<Saved> = serde_json::from_str(&text).ok()?;
-        self.saved = Some(saved);
+        self.saved = Some(State::parse(&text)?);
         Some(match self.disable() {
             Ok(()) => "Önceki çalışmadan kalan sistem proxy ayarı geri alındı.".into(),
             Err(e) => format!("Önceki çalışmadan kalan sistem proxy ayarı geri alınamadı: {e}"),
@@ -134,6 +190,14 @@ impl Networksetup {
             return Err(text.trim().to_owned());
         }
         Ok(text)
+    }
+
+    fn launchctl(args: &[String]) -> Result<String, String> {
+        let out = std::process::Command::new(LAUNCHCTL).args(args).output().map_err(|e| format!("launchctl: {e}"))?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_owned())
     }
 
     fn services() -> Result<Vec<String>, String> {
@@ -164,29 +228,46 @@ impl Networksetup {
             Err(format!("{first} / {}", String::from_utf8_lossy(&out.stderr).trim()))
         }
     }
+
+    fn save(&self) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(&self.saved).map_err(|e| e.to_string())?;
+        std::fs::write(&self.state_file, json).map_err(|e| format!("{}: {e}", self.state_file.display()))
+    }
 }
 
 impl SystemProxy for Networksetup {
-    fn enable(&mut self, pac_url: &str) -> Result<(), String> {
+    fn enable(&mut self, pac_url: &str, proxy: SocketAddr) -> Result<(), String> {
         let services = Self::services()?;
         if self.saved.is_none() {
-            let mut saved = Vec::with_capacity(services.len());
+            let mut state = State::default();
             for s in &services {
                 let (url, enabled) = parse_autoproxy(&Self::run(&["-getautoproxyurl".into(), s.clone()])?);
-                saved.push(Saved { service: s.clone(), url, enabled });
+                state.services.push(Saved { service: s.clone(), url, enabled });
+            }
+            for (name, _) in env_values(proxy) {
+                let value = Self::launchctl(&["getenv".into(), name.into()]).ok().filter(|v| !v.is_empty());
+                state.env.push(SavedEnv { name: name.into(), value });
             }
             // Once diske: ayari degistirip cokersek bir sonraki acilis geri alabilsin.
-            let json = serde_json::to_string_pretty(&saved).map_err(|e| e.to_string())?;
-            std::fs::write(&self.state_file, json).map_err(|e| format!("{}: {e}", self.state_file.display()))?;
-            self.saved = Some(saved);
+            self.saved = Some(state);
+            self.save()?;
         }
         let cmds: Vec<Vec<String>> = services.iter().map(|s| vec!["-setautoproxyurl".into(), s.clone(), pac_url.to_owned()]).collect();
-        Self::apply(&cmds)
+        Self::apply(&cmds)?;
+        for (name, value) in env_values(proxy) {
+            Self::launchctl(&["setenv".into(), name.into(), value])?;
+        }
+        Ok(())
     }
 
     fn disable(&mut self) -> Result<(), String> {
         let Some(saved) = self.saved.take() else { return Ok(()) };
-        let result = Self::apply(&restore_commands(&saved));
+        let mut result = Self::apply(&restore_commands(&saved.services));
+        for c in env_restore_commands(&saved.env) {
+            if let Err(e) = Self::launchctl(&c) {
+                result = result.and(Err(e));
+            }
+        }
         if result.is_ok() {
             let _ = std::fs::remove_file(&self.state_file);
         } else {
@@ -221,6 +302,33 @@ mod tests {
         assert_eq!(cmds[1], ["-setautoproxystate", "Ethernet", "off"]);
         assert_eq!(cmds[2], ["-setautoproxystate", "USB", "off"], "cokmeden kalan kendi ayarimiz");
         assert_eq!(cmds[3], ["-setautoproxystate", "Kapali", "off"]);
+    }
+
+    #[test]
+    fn env_is_set_for_the_proxy_and_restored() {
+        let v = env_values("127.0.0.1:47813".parse().unwrap());
+        assert!(v.contains(&("HTTPS_PROXY", "http://127.0.0.1:47813".into())));
+        assert!(v.contains(&("http_proxy", "http://127.0.0.1:47813".into())));
+        assert!(v.contains(&("no_proxy", NO_PROXY.into())));
+        let saved = vec![
+            SavedEnv { name: "HTTPS_PROXY".into(), value: Some("http://kurum:8080".into()) },
+            SavedEnv { name: "https_proxy".into(), value: None },
+            SavedEnv { name: "HTTP_PROXY".into(), value: Some("http://127.0.0.1:47813".into()) },
+        ];
+        let cmds = env_restore_commands(&saved);
+        assert_eq!(cmds[0], ["setenv", "HTTPS_PROXY", "http://kurum:8080"], "kullanicinin kendi degeri geri gelir");
+        assert_eq!(cmds[1], ["unsetenv", "https_proxy"]);
+        assert_eq!(cmds[2], ["unsetenv", "HTTP_PROXY"], "cokmeden kalan kendi degerimiz silinir");
+    }
+
+    #[test]
+    fn reads_old_and_new_state_files() {
+        let old = r#"[{"service":"Wi-Fi","url":"","enabled":false}]"#;
+        let s = State::parse(old).unwrap();
+        assert_eq!((s.services.len(), s.env.len()), (1, 0));
+        let new = serde_json::to_string(&State { services: vec![], env: vec![SavedEnv { name: "HTTPS_PROXY".into(), value: None }] }).unwrap();
+        assert_eq!(State::parse(&new).unwrap().env.len(), 1);
+        assert!(State::parse("bozuk").is_none());
     }
 
     #[test]

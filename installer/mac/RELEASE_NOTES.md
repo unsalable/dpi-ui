@@ -22,6 +22,7 @@ Komut en yeni sürümü GitHub'dan indirir, özetini doğrular, Uygulamalar klas
 ### Kullanım
 - Uygulama açılınca kendiliğinden bağlanır; sağ üstte menü çubuğunda dünya simgesi görünür. Bağlıyken simge koyu, kapalıyken soluktur.
 - Bir site açılmazsa: **Ayarlar → Bağlantı yöntemi → En iyi yöntemi bul**. Uygulama engelli siteleri her yöntemle dener ve açanı seçer.
+- Roblox gibi oyunlar sistem proxy ayarına bakmaz; DPI UI bağlanınca açılırlarsa onun üzerinden çalışırlar. DPI UI'den önce açtıysan oyunu kapatıp yeniden aç.
 - Pencereyi kapatınca uygulama menü çubuğunda çalışmaya devam eder. Tamamen kapatmak için menü çubuğundaki simgeden **DPI UI'den çık**.
 
 ### Güncellemeler
@@ -30,7 +31,7 @@ Uygulama yeni sürümleri bu sayfadan kendisi indirir, imzasını doğrular ve k
 ### Nasıl çalışır
 Mac'te Windows sürümündeki paket sürücüsünün (WinDivert) karşılığı yok. Bu yüzden uygulama bilgisayarda yerel bir proxy açar ve sistem proxy ayarını yalnızca engelli siteler için ona yönlendirir. Diğer siteler doğrudan gider. Bağlantıyı kesince ya da uygulamadan çıkınca ayar eski hâline döner. Yönetici şifresi gerekmez.
 
-Safari, Chrome, Firefox ve Discord masaüstü uygulaması sistem proxy ayarını kullanır. Sistem ayarına uymayan bazı uygulamalar (bazı oyunlar) etkilenmez. Discord sesli sohbet bu sürümde desteklenmiyor olabilir.
+Safari, Chrome, Firefox ve Discord masaüstü uygulaması sistem proxy ayarını kullanır. Roblox gibi kendi bağlantısını kuran uygulamalar için proxy adresi oturumun ortam değişkenlerine de (HTTPS_PROXY) yazılır; proxy yalnızca listedeki sitelere dokunur, gerisini olduğu gibi geçirir. Discord sesli sohbet bu sürümde desteklenmiyor olabilir.
 
 ### Sorun olursa
 **Ayarlar → Genel → Günlüğü aç** ile açılan dosyayı geliştiriciye gönder.

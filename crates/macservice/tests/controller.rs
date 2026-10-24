@@ -20,7 +20,7 @@ struct FakeSys {
 }
 
 impl SystemProxy for FakeSys {
-    fn enable(&mut self, url: &str) -> Result<(), String> {
+    fn enable(&mut self, url: &str, _proxy: std::net::SocketAddr) -> Result<(), String> {
         if *self.fail.lock().unwrap() {
             return Err("yetki yok".into());
         }

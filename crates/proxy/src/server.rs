@@ -80,6 +80,8 @@ struct Counters {
 struct Shared {
     addr: SocketAddr,
     desync: RwLock<Arc<Desync>>,
+    /// Hangi sitelere uygulanacagi (Windows motoruyla ayni kural). Yoksa her siteye.
+    scope: RwLock<Option<Arc<engine::Scope>>>,
     pac: RwLock<Option<Arc<str>>>,
     resolver: Arc<dyn Resolve>,
     events: Option<EventSink>,
@@ -111,6 +113,7 @@ impl Proxy {
         let shared = Arc::new(Shared {
             addr: listener.local_addr()?,
             desync: RwLock::new(Arc::new(opts.desync)),
+            scope: RwLock::new(None),
             pac: RwLock::new(None),
             resolver: opts.resolver,
             events: opts.events,
@@ -129,6 +132,13 @@ impl Proxy {
     }
 
     /// Yeni baglantilar bu yontemle gider; acik olanlar etkilenmez.
+    /// Yalnizca bu kapsamdaki sitelerin ilk mesaji parcalanir; digerleri oldugu gibi tasinir.
+    /// Ortam degiskeniyle (HTTPS_PROXY) butun trafigini proxy'ye veren uygulamalar icin.
+    /// `None`: her site.
+    pub fn set_scope(&self, scope: Option<engine::Scope>) {
+        *self.shared.scope.write().unwrap() = scope.map(Arc::new);
+    }
+
     pub fn set_desync(&self, d: Desync) {
         *self.shared.desync.write().unwrap() = Arc::new(d);
     }
@@ -572,6 +582,10 @@ fn send_first(client: &mut TcpStream, up: &mut TcpStream, mut first: Vec<u8>, ho
         }
     }
 
+    let scope = s.scope.read().unwrap().clone();
+    if scope.is_some_and(|sc| sc.decide(Some(host)) != engine::scope::Decision::Bypass) {
+        return up.write_all(&first);
+    }
     let d = s.desync.read().unwrap().clone();
     let plan = desync::plan(&first, &d);
     if plan.is_plain() {
