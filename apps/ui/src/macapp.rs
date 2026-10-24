@@ -11,7 +11,7 @@ use std::ptr::NonNull;
 use std::time::Duration;
 
 use block2::RcBlock;
-use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
+use objc2_foundation::{NSNotification, NSNotificationCenter};
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
@@ -155,9 +155,11 @@ pub fn unhide_app() {
 fn observe(name: &'static objc2_foundation::NSNotificationName, f: impl Fn() + 'static) {
     let block = RcBlock::new(move |_: NonNull<NSNotification>| f());
     let center = NSNotificationCenter::defaultCenter();
-    let queue = NSOperationQueue::mainQueue();
+    // Kuyruk verilmez: blok, bildirimi gonderen (ana) is parcaciginda hemen calisir. Ana kuyruga
+    // verilince kapanis bildiriminin blogu sonraya kaliyor, macOS sureci ondan once bitiriyordu
+    // (CI'da HTTPS_PROXY kimi zaman silinmeden kaldi).
     // Gozlemci kaydi uygulama kapanana kadar tutulur.
-    let token = unsafe { center.addObserverForName_object_queue_usingBlock(Some(name), None, Some(&queue), &block) };
+    let token = unsafe { center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block) };
     std::mem::forget(token);
 }
 
