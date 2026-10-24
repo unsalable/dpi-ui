@@ -21,8 +21,10 @@ use crate::resolve::Resolve;
 const STACK: usize = 128 * 1024;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// Ilk mesajin geri kalani en fazla bu kadar beklenir (TLS kaydi parcali geldiyse).
-const FIRST_REST_WAIT: Duration = Duration::from_millis(150);
+/// Ilk mesajin geri kalani en fazla bu kadar beklenir (TLS kaydi parcali geldiyse). Nagle
+/// acik bir istemci ikinci parcayi ilkinin onayini (ACK) bekleyerek yollar; macOS onayi
+/// 100-200 ms geciktirebildigi icin 150 ms Intel Mac'te yetmedi. Yalnizca eksik kayitta beklenir.
+const FIRST_REST_WAIT: Duration = Duration::from_millis(500);
 const MAX_HEAD: usize = 16 * 1024;
 /// Bir yon kapandiktan sonra diger yon bu kadar sessiz kalirsa baglanti kapatilir.
 const HALF_CLOSED_IDLE: Duration = Duration::from_secs(60);
