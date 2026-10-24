@@ -27,9 +27,18 @@ $out = "build\release\mac-$version"
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $out | Out-Null
 
+# Yayin henuz yokken gh stderr'e "release not found" yazar; PowerShell 5.1'de "Stop" altinda bu
+# olumcul hata sayilir. Bekleme sirasinda yalnizca bu cagri icin "Continue".
+function Get-ReleaseAssets {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { return @(gh release view $Tag --repo $Repo --json assets --jq '.assets[].name' 2>$null) }
+    finally { $ErrorActionPreference = $old }
+}
+
 $deadline = (Get-Date).AddMinutes($WaitMinutes)
 while ($true) {
-    $assets = @(gh release view $Tag --repo $Repo --json assets --jq '.assets[].name' 2>$null)
+    $assets = Get-ReleaseAssets
     if ($assets -contains 'DPI-UI-Mac.zip') { break }
     if ((Get-Date) -gt $deadline) { throw "DPI-UI-Mac.zip $WaitMinutes dakikada yayina eklenmedi; GitHub'da 'Mac yayini' is akisina bakin" }
     Write-Host "Mac paketi bekleniyor (GitHub'in Mac makinesi derliyor)..."
