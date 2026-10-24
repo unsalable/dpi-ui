@@ -56,5 +56,22 @@ sleep 3
 after=$(launchctl getenv HTTPS_PROXY)
 note "cikistan sonra HTTPS_PROXY: ${after:-yok}"
 [ -z "$after" ] || bad "cikista HTTPS_PROXY silinmedi"
+# Kapanis temizligi her seferinde: uc tur ac (baglan) / Cmd+Q ile ayni yoldan kapat.
+for round in 1 2 3; do
+    rm -f "$data/ipc.sock"
+    open "$app"
+    for _ in $(seq 1 40); do
+        [ "$(launchctl getenv HTTPS_PROXY)" = "http://127.0.0.1:47813" ] && break
+        sleep 0.5
+    done
+    osascript -e 'tell application "DPI UI" to quit' >/dev/null 2>&1
+    sleep 2
+    left=$(launchctl getenv HTTPS_PROXY)
+    pac=$(networksetup -getautoproxyurl "$(networksetup -listallnetworkservices | sed 1d | grep -v '^\*' | head -1)" | grep Enabled)
+    note "tur $round: cikista HTTPS_PROXY=${left:-yok}, PAC $pac"
+    [ -z "$left" ] || bad "tur $round: HTTPS_PROXY silinmedi"
+    [ "$pac" = "Enabled: No" ] || bad "tur $round: PAC kapanmadi"
+done
+
 cp "$data/logs/service.log" "$out/" 2>/dev/null
 exit "$fail"
