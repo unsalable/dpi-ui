@@ -33,7 +33,11 @@ jobs:
         run: |
           # GitHub'in makinesinde NDK'lar ANDROID_HOME/ndk altinda; en yenisi bu degiskende.
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}"
-          echo "NDK: $ANDROID_NDK_HOME"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          # Slint'in Java yardimcisi derlenirken android.jar gerekir; platform klasoru adlari
+          # (android-36.1 gibi) kendi aramasini sasirtiyor, yol acikca verilir.
+          export ANDROID_JAR="$(ls -d "$ANDROID_HOME"/platforms/android-* | sort -V | tail -1)/android.jar"
+          echo "NDK: $ANDROID_NDK_HOME, android.jar: $ANDROID_JAR"
           cargo ndk -t arm64-v8a -t x86_64 -o target/android-out build -p dpi-ui-mobile
           for abi in arm64-v8a x86_64; do
             mkdir -p apps/android/app/src/main/jniLibs/$abi
