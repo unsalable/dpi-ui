@@ -197,11 +197,19 @@ pub extern "system" fn Java_io_github_unsalable_dpiui_Native_init<'local>(
         }
         // Motor baslayinca ayardaki dil gecerli olur; o zamana kadar (hizli ayar) sistemin dili.
         shared::i18n::set(shared::i18n::Language::System);
-        let class = env.find_class(jni_str!("io/github/unsalable/dpiui/Bridge"))?;
-        let bridge = env.new_global_ref(class)?;
-        let vm = env.get_java_vm()?;
-        let _ = JAVA.set(Java { vm, bridge });
-        Ok(())
+        let mut bind = || -> jni::errors::Result<()> {
+            let class = env.find_class(jni_str!("io/github/unsalable/dpiui/Bridge"))?;
+            let bridge = env.new_global_ref(class)?;
+            let vm = env.get_java_vm()?;
+            let _ = JAVA.set(Java { vm, bridge });
+            Ok(())
+        };
+        let result = bind();
+        // Kurulamazsa VPN, tema ve paylasma calismaz; nedeni gunlukte gorunsun.
+        if let Err(e) = &result {
+            macservice::error!("Java köprüsü kurulamadı: {e}");
+        }
+        result
     })
     .resolve::<jni::errors::LogErrorAndDefault>()
 }
