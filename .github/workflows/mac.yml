@@ -2,7 +2,7 @@ name: Mac
 
 on:
   push:
-    branches: [main, mac-surumu]
+    branches: [main, mac-surumu, android-surumu]
   pull_request:
   workflow_dispatch:
 

@@ -5,7 +5,7 @@ name: Android
 # (release-android.ps1).
 on:
   push:
-    branches: [main, mac-surumu]
+    branches: [main, mac-surumu, android-surumu]
   pull_request:
 
 concurrency:
