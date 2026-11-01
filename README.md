@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/unsalable/dpi-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/unsalable/dpi-ui/actions/workflows/ci.yml)
 [![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-blue.svg)](LICENSE)
+<a href="https://slint.dev"><img src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png" alt="Made with Slint" height="20"></a>
 
 Türkiye için hafif, kararlı ve sade bir DPI atlatma uygulaması. GoodbyeDPI UI 2.x'in yerine
 sıfırdan, Rust ile yazıldı; kendi DPI motorunu kullanır.
