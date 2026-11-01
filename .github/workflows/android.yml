@@ -30,9 +30,10 @@ jobs:
       - name: cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: Rust kutuphanesi (libdpiui.so)
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
         run: |
+          # GitHub'in makinesinde NDK'lar ANDROID_HOME/ndk altinda; en yenisi bu degiskende.
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}"
+          echo "NDK: $ANDROID_NDK_HOME"
           cargo ndk -t arm64-v8a -t x86_64 -o target/android-out build -p dpi-ui-mobile
           for abi in arm64-v8a x86_64; do
             mkdir -p apps/android/app/src/main/jniLibs/$abi
