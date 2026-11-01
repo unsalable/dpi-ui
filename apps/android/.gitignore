@@ -1,0 +1,6 @@
+.gradle/
+build/
+app/build/
+local.properties
+# cargo ndk ciktisi (build-android.ps1 uretir)
+app/src/main/jniLibs/

@@ -10,7 +10,9 @@
 #   -Legacy : paketi eski adla (GoodbyeDPI-UI-3-Setup.exe) da yukler ve manifest o adi gosterir;
 #             3.0.0-alpha.1 kurulumlari da guncellemeyi bulsun diye (gecis surumu icin)
 #   -NoMac  : Mac paketini bekleyip imzalamaz (sonra release-mac.ps1 -Tag vX ile yapilabilir)
+#   -NoAndroid : Android paketini derleyip eklemez (sonra release-android.ps1 -Tag vX)
 #
+# Android paketi (APK) bu bilgisayarda derlenir, imzalanir ve yayina eklenir (release-android.ps1).
 # Yayin yayimlaninca GitHub'in Mac makinesi Mac paketini derleyip yayina ekler (mac-release.yml);
 # betik sonunda onu bekler ve yerel anahtarla imzalar (release-mac.ps1, ~10 dk).
 #
@@ -23,7 +25,8 @@ param(
     [switch] $Bump,
     [switch] $DryRun,
     [switch] $Legacy,
-    [switch] $NoMac
+    [switch] $NoMac,
+    [switch] $NoAndroid
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,6 +85,12 @@ if ($Version.Contains("-")) { $ghArgs += "--prerelease" }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "GitHub surumu olusturulamadi" }
 Write-Host "Yayinlandi: https://github.com/unsalable/dpi-ui/releases/tag/$tag"
+
+if (-not $NoAndroid) {
+    Write-Host "Android paketi derleniyor ve yayina ekleniyor (-NoAndroid ile atlanir)..."
+    powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\release-android.ps1" -Tag $tag -Key $Key
+    if ($LASTEXITCODE -ne 0) { Write-Host "UYARI: Android paketi eklenemedi; sonra: release-android.ps1 -Tag $tag" }
+}
 
 if (-not $NoMac -and (Test-Path "$PSScriptRoot\.github\workflows\mac-release.yml")) {
     Write-Host "Mac paketi bekleniyor ve imzalanacak (yaklasik 10 dk; -NoMac ile atlanir)..."

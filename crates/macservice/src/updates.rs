@@ -67,12 +67,23 @@ pub fn pick(current: &Version, releases: &[Release], include_prerelease: bool) -
         .max_by(|a, b| a.version.cmp(&b.version))
 }
 
-/// Imzayi dogrular ve manifesti adaya karsi denetler.
+/// Imzayi dogrular ve manifesti adaya karsi denetler (Mac paketi).
 pub fn verify_manifest(json: &[u8], sig_text: &[u8], key: &[u8; 32], expected: &Version) -> Result<Manifest, String> {
+    verify_signed(json, sig_text, key, expected, Manifest::check_mac)
+}
+
+/// Imzayi dogrular; manifesti `check` (paketin turune gore) adaya karsi denetler.
+pub fn verify_signed(
+    json: &[u8],
+    sig_text: &[u8],
+    key: &[u8; 32],
+    expected: &Version,
+    check: fn(&Manifest, &Version) -> Result<(), String>,
+) -> Result<Manifest, String> {
     let sig = update::from_hex(&String::from_utf8_lossy(sig_text)).ok_or_else(|| t!("imza dosyası bozuk", "the signature file is corrupt"))?;
     UnparsedPublicKey::new(&ED25519, key).verify(json, &sig).map_err(|_| t!("güncelleme imzası geçersiz", "invalid update signature"))?;
     let m: Manifest = serde_json::from_slice(json).map_err(|e| t!("manifest okunamadı: {e}", "couldn't read the manifest: {e}"))?;
-    m.check_mac(expected)?;
+    check(&m, expected)?;
     Ok(m)
 }
 
@@ -161,7 +172,7 @@ pub fn pick_from_feed(current: &Version, include_prerelease: bool) -> Result<Opt
 }
 
 /// Atom akisindaki yayin etiketleri (siralari korunur).
-fn feed_tags(feed: &str) -> Vec<&str> {
+pub(crate) fn feed_tags(feed: &str) -> Vec<&str> {
     feed.split("releases/tag/").skip(1).filter_map(|s| s.split(['"', '<']).next()).filter(|t| !t.is_empty()).collect()
 }
 

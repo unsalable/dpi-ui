@@ -1,0 +1,101 @@
+// Telefon (Android) penceresi: ekrani doldurur; masaustuyle ayni sayfalar ve gezinme. Durum
+// cubugu ve gezinme cubugu icerigin altinda kalir (kenardan kenara), sayfalar onlarin arasinda
+// durur; klavye acilinca sayfa klavyenin ustunde biter. Geri tusu bir onceki ekrana doner, ana
+// ekranda uygulamayi kapatir.
+
+import { Theme, Type, Motion } from "tokens.slint";
+import { PowerState } from "connect.slint";
+import { AppState, Choice, HostItem, BenchItem, CategoryItem } from "state.slint";
+import { Shell } from "shell.slint";
+
+export { PowerState, Theme, Type, Motion, AppState, Choice, HostItem, BenchItem, CategoryItem }
+
+export component AppWindow inherits Window {
+    title: "DPI UI";
+    preferred-width: 412px;
+    preferred-height: 892px;
+    /// Ayni arayuz Windows'taki pencereyle ortak kodu kullanir; telefonda anlami yok.
+    in-out property <int> repaint-epoch;
+    background: Theme.bg;
+    default-font-family: Type.text;
+    default-font-size: 14px;
+
+    /// Testler: sistem cubuklarini taklit eder (gercek cihazda `safe-area-insets` gelir).
+    in property <length> test-inset-top;
+    in property <length> test-inset-bottom;
+
+    property <length> top-inset: max(root.safe-area-insets.top, root.test-inset-top);
+    property <length> keyboard: root.virtual-keyboard-size.height > 0
+        ? max(0px, root.height - root.virtual-keyboard-position.y)
+        : 0px;
+    property <length> bottom-inset: max(max(root.safe-area-insets.bottom, root.test-inset-bottom), root.keyboard);
+
+    in-out property <int> depth <=> body.depth;
+    in-out property <int> sub <=> body.sub;
+    in-out property <bool> sub-from-home <=> body.sub-from-home;
+
+    callback minimize();
+    callback close-window();
+    callback page-changed(int, int);
+    out property <bool> toast-visible: body.toast-visible;
+    out property <length> home-x: body.home-x;
+    out property <length> menu-x: body.menu-x;
+
+    /// Son islenen geri tusunun zamani.
+    property <duration> last-back: -1s;
+
+    function back-recent() -> bool {
+        animation-tick() - root.last-back < 300ms
+    }
+
+    keys := FocusScope {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        init => {
+            self.focus();
+        }
+        // Geri tusu birakilinca bir ekran geri; ana ekranda reddedilir, Android uygulamayi kapatir.
+        // Android 14+'ta ayni basis iki yoldan gelir (tus olayi ve geri hareketi): ikinci kopya
+        // yutulur, yoksa iki ekran geri gider ya da menuden donerken uygulama kapanirdi.
+        // Metin alani odaktayken (klavye acik) geri tusu once yalnizca odagi birakir; klavye kapanir,
+        // yazilan kalir.
+        key-pressed(event) => {
+            event.text == Key.Back && (root.depth > 0 || root.back-recent() || !self.has-focus) ? accept : reject
+        }
+        key-released(event) => {
+            if (event.text != Key.Back) {
+                return reject;
+            }
+            if (root.back-recent()) {
+                return accept;
+            }
+            if (!self.has-focus) {
+                self.focus();
+            } else if (root.depth > 0) {
+                body.back();
+            } else {
+                return reject;
+            }
+            root.last-back = animation-tick();
+            accept
+        }
+
+        // Tablette sayfalar ortada, telefon genisliginde bir sutun.
+        property <length> room: root.width - root.safe-area-insets.left - root.safe-area-insets.right;
+        body := Shell {
+            width: min(parent.room, 600px);
+            x: root.safe-area-insets.left + (parent.room - self.width) / 2;
+            y: root.top-inset;
+            height: root.height - root.top-inset - root.bottom-inset;
+            // Klavye kapanirken sayfa yavasca asagi uzar.
+            animate height { duration: Motion.base; easing: ease-out; }
+            page-changed(d, s) => {
+                // Metin alanindan cikinca da geri tusu ekranlari gezsin.
+                keys.focus();
+                root.page-changed(d, s);
+            }
+        }
+    }
+}

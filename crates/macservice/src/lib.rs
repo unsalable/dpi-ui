@@ -1,9 +1,14 @@
 //! Mac'te motor hizmeti. Windows'ta motor ayri bir Windows hizmetidir; Mac'te yonetici izni
 //! gerektirmedigi icin uygulamanin icinde calisir. Arayuz onunla yine IPC uzerinden, Windows
 //! servisiyle ayni mesajlarla konusur (Unix soketi), boylece pencere kodu ayni kalir.
+//!
+//! Android surumu de ayni hizmeti uygulamanin icinde calistirir; farki trafigi proxy'ye getiren
+//! katman: sistem proxy ayari yerine VPN (`start_with` ile uygulama verir).
 
+pub mod apk;
 pub mod bench;
 pub mod controller;
+pub mod http;
 #[macro_use]
 pub mod log;
 pub mod search;
@@ -57,27 +62,41 @@ pub struct Service {
 /// Hizmeti baslatir: onceki calismadan kalan sistem ayarini geri alir, ayari okur, soketi acar
 /// ve ayar istiyorsa baglanir.
 pub fn start() -> std::io::Result<Service> {
+    start_with(
+        |dir| {
+            #[cfg(target_os = "macos")]
+            {
+                let mut ns = sysproxy::Networksetup::new(dir.join("sysproxy.json"));
+                if let Some(note) = ns.restore_stale() {
+                    warn!("{note}");
+                }
+                Box::new(ns)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = dir;
+                Box::new(sysproxy::Untouched)
+            }
+        },
+        true,
+    )
+}
+
+/// `sys`: trafigi proxy'ye getiren katman (veri klasoru verilir). `may_auto_connect`: ayardaki
+/// "acilista otomatik baglan" burada uygulansin mi (Android'de hayir: VPN Java'nin ana is
+/// parcacigini bekler, uygulama baglanmayi baslatmadan sonra kendisi yapar).
+pub fn start_with(sys: impl FnOnce(&std::path::Path) -> Box<dyn sysproxy::SystemProxy>, may_auto_connect: bool) -> std::io::Result<Service> {
     let dir = shared::paths::service_data_dir();
     std::fs::create_dir_all(&dir)?;
     log::init(&dir.join("logs"));
-    info!("DPI UI {} (Mac) başlıyor.", shared::VERSION);
+    info!("DPI UI {} ({}) başlıyor.", shared::VERSION, if cfg!(target_os = "android") { "Android" } else { "Mac" });
     #[cfg(unix)]
     raise_fd_limit();
 
     let config = store::load_config(&dir);
     shared::i18n::set(config.language);
-    let auto_connect = config.auto_connect;
-
-    #[cfg(target_os = "macos")]
-    let sys: Box<dyn sysproxy::SystemProxy> = {
-        let mut ns = sysproxy::Networksetup::new(dir.join("sysproxy.json"));
-        if let Some(note) = ns.restore_stale() {
-            warn!("{note}");
-        }
-        Box::new(ns)
-    };
-    #[cfg(not(target_os = "macos"))]
-    let sys: Box<dyn sysproxy::SystemProxy> = Box::new(sysproxy::Untouched);
+    let auto_connect = config.auto_connect && may_auto_connect;
+    let sys = sys(&dir);
 
     let ctrl = Controller::new(config, sys, dir, proxy::DEFAULT_PORT);
     #[cfg(unix)]

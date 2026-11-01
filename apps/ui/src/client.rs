@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::io::BufReader;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,7 +14,7 @@ use shared::pipeio::{PipeHandle, PipeWriter};
 
 #[cfg(windows)]
 type Writer = PipeWriter;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 type Writer = std::os::unix::net::UnixStream;
 
 /// Servise baglanir: (okuyucu, yazici).
@@ -23,8 +23,8 @@ fn connect() -> std::io::Result<(impl std::io::Read, Writer)> {
     PipeHandle::connect(&pipe_name(), 1000)?.split()
 }
 
-/// Mac: uygulamanin icindeki hizmetin Unix soketi.
-#[cfg(target_os = "macos")]
+/// Mac ve Android: uygulamanin icindeki hizmetin Unix soketi.
+#[cfg(unix)]
 fn connect() -> std::io::Result<(std::os::unix::net::UnixStream, Writer)> {
     let s = std::os::unix::net::UnixStream::connect(macservice::socket_path())?;
     Ok((s.try_clone()?, s))
@@ -51,6 +51,8 @@ struct Inner {
     writer: Mutex<Option<Writer>>,
     next: AtomicU64,
     pending: Mutex<HashMap<u64, Callback>>,
+    /// `stop` cagrildi: baglanti kapanir, yeniden denenmez.
+    stopped: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -60,7 +62,7 @@ pub struct Client {
 
 impl Client {
     pub fn start(name: &'static str, on: impl Fn(Incoming) + Send + Sync + 'static) -> Self {
-        let inner = Arc::new(Inner { writer: Mutex::new(None), next: AtomicU64::new(1), pending: Mutex::new(HashMap::new()) });
+        let inner = Arc::new(Inner { writer: Mutex::new(None), next: AtomicU64::new(1), pending: Mutex::new(HashMap::new()), stopped: AtomicBool::new(false) });
         let client = Client { inner };
         let c = client.clone();
         std::thread::Builder::new()
@@ -92,9 +94,21 @@ impl Client {
         self.request(request, |_| {});
     }
 
+    /// Baglantiyi kapatir ve is parcacigini bitirir (Android: pencere kapanir, surec yasar).
+    #[cfg(target_os = "android")]
+    pub fn stop(&self) {
+        self.inner.stopped.store(true, Ordering::SeqCst);
+        if let Some(w) = self.inner.writer.lock().unwrap().as_ref() {
+            let _ = w.shutdown(std::net::Shutdown::Both);
+        }
+    }
+
     fn run(&self, name: &str, on: impl Fn(Incoming)) {
         let mut announced_down = false;
         loop {
+            if self.inner.stopped.load(Ordering::SeqCst) {
+                return;
+            }
             let (reader, writer) = match connect() {
                 Ok(p) => p,
                 Err(_) => {
@@ -106,7 +120,15 @@ impl Client {
                     continue;
                 }
             };
-            *self.inner.writer.lock().unwrap() = Some(writer);
+            {
+                // `stop` ile yarisma: bayrak yazici kilidinin altinda bakilir; durdurulduysa
+                // baglanti (okuyucu ve yazici) burada kapanir.
+                let mut w = self.inner.writer.lock().unwrap();
+                if self.inner.stopped.load(Ordering::SeqCst) {
+                    return;
+                }
+                *w = Some(writer);
+            }
 
             self.send(Request::Hello { client: name.into(), protocol: ipc::PROTOCOL_VERSION });
             self.send(Request::Subscribe);
@@ -140,6 +162,9 @@ impl Client {
             let waiting: Vec<Callback> = self.inner.pending.lock().unwrap().drain().map(|(_, cb)| cb).collect();
             for cb in waiting {
                 cb(Response::Error { message: "Motor hizmetiyle bağlantı koptu.".into() });
+            }
+            if self.inner.stopped.load(Ordering::SeqCst) {
+                return;
             }
             on(Incoming::Disconnected);
             announced_down = true;

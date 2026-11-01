@@ -32,8 +32,30 @@ pub fn lines() -> Vec<String> {
     LOG.lock().unwrap().as_ref().map(|l| l.ring.iter().cloned().collect()).unwrap_or_default()
 }
 
+/// Android: satir `adb logcat -s DPI-UI` ile de gorunur (stderr orada bir yere gitmez).
+#[cfg(target_os = "android")]
+fn logcat(level: &str, line: &str) {
+    use std::ffi::{CString, c_char, c_int};
+    #[link(name = "log")]
+    unsafe extern "C" {
+        fn __android_log_write(prio: c_int, tag: *const c_char, text: *const c_char) -> c_int;
+    }
+    // android/log.h: INFO 4, WARN 5, ERROR 6.
+    let prio = match level {
+        "hata" => 6,
+        "uyarı" => 5,
+        _ => 4,
+    };
+    if let Ok(text) = CString::new(line) {
+        // SAFETY: iki C dizesi de cagri boyunca yasar.
+        unsafe { __android_log_write(prio, c"DPI-UI".as_ptr(), text.as_ptr()) };
+    }
+}
+
 pub fn write(level: &str, msg: std::fmt::Arguments) {
     let line = format!("{} [{level}] {msg}", timestamp());
+    #[cfg(target_os = "android")]
+    logcat(level, &line);
     let mut guard = LOG.lock().unwrap();
     let Some(log) = guard.as_mut() else {
         eprintln!("{line}");

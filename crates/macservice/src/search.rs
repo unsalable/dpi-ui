@@ -86,6 +86,13 @@ pub fn run(resolver: Arc<dyn Resolve>, fetch: Arc<Fetch>, en: bool) -> Outcome {
     Outcome { baseline, online, trials }
 }
 
+/// Gercek istek, uygulama icindeki HTTPS istemcisiyle (Android'de curl yok). curl gibi: sunucudan
+/// herhangi bir HTTP yaniti gelmesi yeter.
+pub fn native(proxy: SocketAddr, url: &str) -> bool {
+    let opts = crate::http::Options { proxy: Some(proxy), deadline: std::time::Duration::from_secs(7), head_only: true, ..Default::default() };
+    crate::http::get(url, &opts, &mut std::io::sink()).is_ok()
+}
+
 /// Gercek istek: curl proxy uzerinden (macOS'ta her zaman var; Windows 10+ da curl.exe tasir).
 pub fn curl(proxy: SocketAddr, url: &str) -> bool {
     let (exe, null) = if cfg!(windows) { ("curl.exe", "NUL") } else { ("/usr/bin/curl", "/dev/null") };

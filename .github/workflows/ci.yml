@@ -13,8 +13,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Arayuz testleri Windows 11'in Segoe UI Variable yazi tipine gore yerlesim olcer; CI
-      # imajinda bu yazi tipi olmayabilir, o yuzden arayuz burada yalnizca derlenir.
+      # imajinda bu yazi tipi olmayabilir, o yuzden arayuz (masaustu ve telefon) burada yalnizca derlenir.
       - name: Testler (motor, servis, ortak)
-        run: cargo test --workspace --exclude goodbyedpi3-ui
+        run: cargo test --workspace --exclude goodbyedpi3-ui --exclude dpi-ui-mobile
       - name: Arayuz derlemesi
-        run: cargo build -p goodbyedpi3-ui
+        run: cargo build -p goodbyedpi3-ui -p dpi-ui-mobile

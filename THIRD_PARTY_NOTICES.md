@@ -9,6 +9,9 @@ derlenirken içine giren bileşenler ve lisansları:
 | [Slint](https://slint.dev) | Arayüz kütüphanesi | Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0; metni `licenses\Slint-Royalty-free-2.0.md` (atıf: README'deki "Made with Slint" rozeti) |
 | [rustls](https://github.com/rustls/rustls), [ring](https://github.com/briansmith/ring) | Şifreli DNS (DoH/DoT) | Apache-2.0 / MIT / ISC |
 | [webpki-roots](https://github.com/rustls/webpki-roots) | Kök sertifikalar | CDLA-Permissive-2.0 |
+| [tun2proxy](https://github.com/tun2proxy/tun2proxy), [ipstack](https://github.com/narrowlink/ipstack) | Android: VPN arayüzündeki paketleri yerel proxy'ye aktarır | MIT / Apache-2.0 |
+| [Skia](https://skia.org) ([rust-skia](https://github.com/rust-skia/rust-skia) üzerinden) | Android: Slint'in çizicisi | BSD-3-Clause / MIT |
+| [jni](https://github.com/jni-rs/jni-rs), [android-activity](https://github.com/rust-mobile/android-activity) | Android: Java ile köprü, uygulama yaşam döngüsü | MIT ve/veya Apache-2.0 |
 | serde, serde_json, windows-sys, windows-service, winit ve diğer Rust kütüphaneleri | Çeşitli | MIT ve/veya Apache-2.0 (ayrıntı: her paketin kendi `Cargo.toml` dosyası) |
 
 ## Fikirler ve teknikler

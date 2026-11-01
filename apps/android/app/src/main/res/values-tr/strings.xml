@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="protected_title">Korumalı</string>
+    <string name="disconnect">Bağlantıyı kes</string>
+    <string name="channel">Bağlantı durumu</string>
+    <string name="no_vpn_permission">VPN izni yok.</string>
+    <string name="updates_channel">Güncellemeler</string>
+    <string name="update_ready">DPI UI güncellemesi hazır</string>
+    <string name="update_tap">Yüklemek için dokun.</string>
+</resources>

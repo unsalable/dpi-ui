@@ -12,6 +12,8 @@ use shared::i18n::{self, Language};
 use shared::t;
 use shared::update::{UpdateState, UpdateStatus};
 use shared::ipc::{EngineState, EngineStatus, Event, LearnedHost, Request, Response, StateSnapshot};
+// Android'de pencere winit'in degil, Slint'in Android katmaninin.
+#[cfg(not(target_os = "android"))]
 use slint::winit_030::{WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, VecModel};
 #[cfg(windows)]
@@ -75,6 +77,7 @@ fn s(v: impl Into<SharedString>) -> SharedString {
 }
 
 /// Bolum basligi icin buyuk harf; Turkcede i -> İ, ı -> I.
+#[cfg(windows)]
 fn upper(text: &str, en: bool) -> String {
     if en {
         return text.to_uppercase();
@@ -273,6 +276,10 @@ impl Ctx {
     /// Servis guncellemeyi kuruyor: pencerenin dosyasi degisecegi icin pencere kapanir;
     /// kurulumdan sonra servis pencereyi yeniden acar.
     fn close_for_update(&self) {
+        // Android: paket yukleyicisi onaydan sonra uygulamayi kendisi kapatir.
+        if cfg!(target_os = "android") {
+            return;
+        }
         let UpdateState::Installing { version } = &self.update.borrow().state else { return };
         if self.closing.get() || self.update_closing.replace(true) {
             return;
@@ -331,6 +338,11 @@ impl Ctx {
         }
         #[cfg(target_os = "macos")]
         crate::macapp::show_state(power, &title);
+        // Android: bagliyken kalici bildirimde yontem ve DNS.
+        #[cfg(target_os = "android")]
+        if e.state == EngineState::On {
+            winsys::show_connected(&format!("{} · {}", e.method_name, e.dns_name));
+        }
         st.set_power(power);
         st.set_status_title(s(title));
         st.set_status_sub(s(sub));
@@ -518,6 +530,9 @@ impl Ctx {
         }
         #[cfg(target_os = "macos")]
         winsys::set_window_theme(&app, dark);
+        // Android: durum ve gezinme cubugu simgeleri zemine gore acik/koyu.
+        #[cfg(target_os = "android")]
+        winsys::set_window_theme(dark);
     }
 
     // ------------------------------------------------------------ ilk calistirma
@@ -566,6 +581,20 @@ impl Ctx {
         // Tarama surerken ikinci dokunus vazgecmektir.
         let was_pending = self.pending_connect.take().is_some();
         let connect = !was_pending && !matches!(state, EngineState::On | EngineState::Starting);
+        // Android: ilk baglantida sistem VPN iznini sorar; onay gelince yeniden denenir.
+        #[cfg(target_os = "android")]
+        if connect && !winsys::vpn_permitted() {
+            winsys::request_vpn_permission(|granted| {
+                with_ctx(|c| {
+                    if granted {
+                        c.power_toggle();
+                    } else {
+                        c.toast(&t!("Bağlanmak için VPN izni gerekiyor.", "VPN permission is needed to connect."), true);
+                    }
+                })
+            });
+            return;
+        }
         if connect {
             // Simge hemen taramaya gecer; sonuc gelince (en erken MIN_BUSY sonra) yerine oturur.
             self.pending_connect.set(Some(Instant::now()));
@@ -798,9 +827,9 @@ fn method_list(cfg: &AppConfig, isp_index: usize, en: bool) -> MethodList {
     MethodList { header, main, more, ids, index }
 }
 
-/// Mac: proxy motorunun yontemleri. Saglayiciya gore oneri yok (yalnizca Kablonet olculdu);
+/// Mac ve Android: proxy motorunun yontemleri. Saglayiciya gore oneri yok (yalnizca Kablonet olculdu);
 /// TLS kaydini bolen ilk iki yontem onerilen bolumde.
-#[cfg(target_os = "macos")]
+#[cfg(not(windows))]
 fn method_list(cfg: &AppConfig, _isp_index: usize, en: bool) -> MethodList {
     let (mut main, mut more, mut ids) = (Vec::new(), Vec::new(), Vec::new());
     for (n, m) in proxy::presets::METHODS.iter().enumerate() {
@@ -819,7 +848,7 @@ fn method_name(cfg: &AppConfig) -> String {
     cfg.active_method().name
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(windows))]
 fn method_name(cfg: &AppConfig) -> String {
     proxy::presets::method_or_default(&cfg.proxy_method).label(i18n::english()).into()
 }
@@ -829,7 +858,7 @@ fn set_method(cfg: &mut AppConfig, id: String) {
     cfg.method = id;
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(windows))]
 fn set_method(cfg: &mut AppConfig, id: String) {
     cfg.proxy_method = id;
 }
@@ -953,11 +982,19 @@ pub fn run(show_event: ShowEvent) -> Result<(), slint::PlatformError> {
         app.global::<crate::Type>().set_text(s(font.as_str()));
         app.global::<crate::Type>().set_display(s(font.as_str()));
     }
+    // Android: sistemin yazi tipi (Segoe yok).
+    #[cfg(target_os = "android")]
+    {
+        app.global::<AppState>().set_mobile(true);
+        app.global::<crate::Type>().set_text(s("sans-serif"));
+        app.global::<crate::Type>().set_display(s("sans-serif"));
+    }
 
     bind_callbacks(&app);
 
     // Windows simge durumuna kucultmede (ve bazen ortulup acilinca) pencere icerigini atar;
     // Slint ise yalnizca degisen yerleri yeniden cizer. Pencere geri gelince tamami cizilsin.
+    #[cfg(not(target_os = "android"))]
     app.window().on_winit_window_event({
         let weak = app.as_weak();
         move |_, event| {
@@ -983,7 +1020,7 @@ pub fn run(show_event: ShowEvent) -> Result<(), slint::PlatformError> {
     let client = Client::start("pencere", |inc| {
         let _ = slint::invoke_from_event_loop(move || with_ctx(|c| c.on_incoming(inc)));
     });
-    *ctx.client.borrow_mut() = Some(client);
+    *ctx.client.borrow_mut() = Some(client.clone());
 
     // Ikinci kez acilinca var olan pencere one gelir; tepsiden "Cik" denince pencere de kapanir.
     #[cfg(windows)]
@@ -1081,6 +1118,13 @@ pub fn run(show_event: ShowEvent) -> Result<(), slint::PlatformError> {
     // Mac: pencere gizlenince de uygulama menu cubugunda calismaya devam eder.
     #[cfg(target_os = "macos")]
     slint::run_event_loop_until_quit()?;
+    // Android: etkinlik (activity) kapaninca doner; surec ve motor calismaya devam eder, etkinlik
+    // yeniden acilinca bu islev bastan cagrilir. Eski istemci baglantisi birakilir.
+    #[cfg(target_os = "android")]
+    {
+        slint::run_event_loop()?;
+        client.stop();
+    }
     #[cfg(windows)]
     drop(styler);
     CTX.with(|c| *c.borrow_mut() = None);
@@ -1117,6 +1161,12 @@ pub fn quit_app() {
     with_ctx(|c| c.quit_now());
 }
 
+/// Android: sistemin koyu/acik gorunumu degisti; tema "Sistem"se yeniden uygulanir.
+#[cfg(target_os = "android")]
+pub fn system_theme_changed() {
+    with_ctx(|c| c.apply_prefs());
+}
+
 #[cfg(windows)]
 fn spawn_tray() {
     if let Ok(exe) = std::env::current_exe() {
@@ -1125,6 +1175,7 @@ fn spawn_tray() {
 }
 
 fn bind_callbacks(app: &AppWindow) {
+    #[cfg(not(target_os = "android"))]
     app.global::<AppState>().on_drag_window({
         let weak = app.as_weak();
         move || {
@@ -1343,11 +1394,15 @@ fn bind_callbacks(app: &AppWindow) {
     });
     st.on_open_logs(|| {
         let log = shared::paths::log_dir().join("service.log");
-        if log.exists() {
-            winsys::shell_open(&log.display().to_string());
-        } else {
+        if !log.exists() {
             with_ctx(|c| c.toast(&t!("Henüz günlük dosyası yok.", "There's no log file yet."), false));
+            return;
         }
+        // Android'de dosya acilamaz; gunluk metni paylasma menusuyle gonderilir.
+        #[cfg(target_os = "android")]
+        winsys::share_file_text(&log, "DPI UI");
+        #[cfg(not(target_os = "android"))]
+        winsys::shell_open(&log.display().to_string());
     });
 }
 

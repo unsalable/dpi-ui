@@ -43,7 +43,8 @@ struct Inner {
     pac_version: u64,
     subscribers: Vec<(u64, SyncSender<ServerMessage>)>,
     update: UpdateStatus,
-    /// Elle kurulum icin disk goruntusu (imzali paket yoksa).
+    /// Elle kurulum icin disk goruntusu (imzali paket yoksa). Android'de yok.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     update_url: Option<String>,
     /// Indirilip imzasi dogrulanmis paket.
     prepared: Option<updates::Prepared>,
@@ -100,7 +101,11 @@ pub fn pac_scope(cfg: &AppConfig) -> PacScope {
 
 impl Controller {
     pub fn new(config: AppConfig, sys: Box<dyn SystemProxy>, data_dir: PathBuf, port: u16) -> Arc<Self> {
-        Self::with_fetch(config, sys, data_dir, port, Arc::new(search::curl))
+        #[cfg(not(target_os = "android"))]
+        let fetch = search::curl;
+        #[cfg(target_os = "android")]
+        let fetch = search::native;
+        Self::with_fetch(config, sys, data_dir, port, Arc::new(fetch))
     }
 
     /// `fetch`: yontem aramasinin istekleri (testlerde gercek siteler yerine sahte).
@@ -131,6 +136,12 @@ impl Controller {
 
     pub fn status(&self) -> EngineStatus {
         self.inner.lock().unwrap().status.clone()
+    }
+
+    /// Durum; hizmet o an mesgulse (baglaniyor) beklemeden `None`. Android'de Java'nin ana is
+    /// parcacigi icin: baglanma o is parcacigindaki VPN hizmetini bekler.
+    pub fn try_status(&self) -> Option<EngineStatus> {
+        self.inner.try_lock().ok().map(|i| i.status.clone())
     }
 
     /// Calisan proxy'nin adresi (testler ve tanilama).
@@ -402,6 +413,7 @@ impl Controller {
         });
     }
 
+    #[cfg(not(target_os = "android"))]
     fn find_update(&self, beta: bool) -> Result<UpdateState, String> {
         let current = Version::parse(shared::VERSION).expect("surum");
         let found = match updates::fetch() {
@@ -434,8 +446,61 @@ impl Controller {
         Ok(UpdateState::Ready { version, notes: found.notes, sha256 })
     }
 
+    /// Android: imzali APK'yi bulur, indirir ve dogrular.
+    #[cfg(target_os = "android")]
+    fn find_update(&self, beta: bool) -> Result<UpdateState, String> {
+        use crate::apk;
+        let current = Version::parse(shared::VERSION).expect("surum");
+        let found = match apk::fetch() {
+            Ok(list) => apk::pick(&current, &list, beta),
+            Err(e) => {
+                warn!("Sürüm listesi alınamadı ({e}); yayın akışına bakılıyor.");
+                apk::pick_from_feed(&current, beta)?
+            }
+        };
+        let Some(found) = found else {
+            return Ok(UpdateState::UpToDate);
+        };
+        info!("Android güncellemesi var: {} (şu an {current}).", found.version);
+        let version = found.version.to_string();
+        self.set_update(UpdateState::Downloading { version: version.clone(), percent: 0 }, false);
+        let prepared = apk::prepare(&found, &self.data_dir.join("update"))?;
+        info!("Sürüm {version} indirildi ve imzası doğrulandı.");
+        let sha256 = prepared.sha256.clone();
+        self.inner.lock().unwrap().prepared = Some(prepared);
+        Ok(UpdateState::Ready { version, notes: found.notes, sha256 })
+    }
+
+    /// Android: hazir APK'yi sistemin paket yukleyicisine verir. Kurulunca Android uygulamayi
+    /// kapatir; yeni surum acilista (telefon acilinca baslat aciksa) yeniden baglanir.
+    #[cfg(target_os = "android")]
+    pub fn install_update(&self, background: bool) -> Result<(), String> {
+        let prepared = self.inner.lock().unwrap().prepared.clone();
+        let Some(p) = prepared else {
+            return Err(t!("Kurulacak güncelleme yok.", "There's no update to install."));
+        };
+        crate::apk::install(&p, !background)?;
+        info!("Sürüm {} paket yükleyicisine verildi.", p.version);
+        self.set_update(UpdateState::Installing { version: p.version.to_string() }, false);
+        Ok(())
+    }
+
+    /// Android: paket yukleyicisi kurmadi (kullanici vazgecti ya da hata); "Simdi yukle" yeniden
+    /// denenebilir.
+    pub fn install_failed(&self, message: &str) {
+        let ready = {
+            let inner = self.inner.lock().unwrap();
+            inner.prepared.as_ref().map(|p| UpdateState::Ready { version: p.version.to_string(), notes: String::new(), sha256: p.sha256.clone() })
+        };
+        warn!("Güncelleme kurulmadı: {message}");
+        if let Some(state) = ready {
+            self.set_update(state, false);
+        }
+    }
+
     /// Hazir paketi kurar: betik uygulama kapaninca yeni paketi yerine koyup yeniden acar.
     /// `background`: kendiliginden kurulum; uygulama menu cubugunda yeniden acilir.
+    #[cfg(not(target_os = "android"))]
     pub fn install_update(&self, background: bool) -> Result<(), String> {
         let (prepared, url) = {
             let inner = self.inner.lock().unwrap();

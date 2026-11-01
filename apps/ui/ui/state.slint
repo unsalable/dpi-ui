@@ -38,6 +38,10 @@ export global AppState {
     in-out property <PowerState> power: PowerState.off;
     /// Mac surumu: pencere cubugu macOS'un, Windows'a ozgu satirlar gizli, metinler Mac'e gore.
     in-out property <bool> mac: false;
+    /// Android surumu: pencere ve tepsi yok, metinler telefona gore.
+    in-out property <bool> mobile: false;
+    /// Motor yerel proxy (Mac ve Android): saglayiciya gore yontem, ogrenme ve VPN ayari yok.
+    out property <bool> proxy-engine: self.mac || self.mobile;
     in-out property <bool> service-missing: false;
     in-out property <string> status-title: @tr("Kapalı");
     in-out property <string> status-sub: @tr("Bağlanmak için dokun");

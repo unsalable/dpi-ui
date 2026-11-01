@@ -6,7 +6,7 @@
 //! ilk mesaji `desync::plan` ile parcalanip gonderilir, gerisi oldugu gibi aktarilir.
 
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, RwLock};
@@ -423,8 +423,12 @@ fn socks5(c: &mut TcpStream, s: &Shared) -> Option<Upstream> {
     let mut port = [0u8; 2];
     c.read_exact(&mut port).ok()?;
     let port = u16::from_be_bytes(port);
+    if req[1] == 3 {
+        udp_associate(c, s);
+        return None;
+    }
     if req[1] != 1 {
-        // Yalnizca CONNECT; BIND ve UDP ASSOCIATE yok.
+        // CONNECT ve UDP ASSOCIATE; BIND yok.
         let _ = c.write_all(&socks_reply(7));
         return None;
     }
@@ -448,6 +452,205 @@ fn socks5(c: &mut TcpStream, s: &Shared) -> Option<Upstream> {
 
 fn socks_reply(code: u8) -> [u8; 10] {
     [5, code, 0, 1, 0, 0, 0, 0, 0, 0]
+}
+
+// ------------------------------------------------------------ SOCKS5 UDP
+
+/// SOCKS5 UDP ASSOCIATE (RFC 1928 7): datagramlar parcalanmadan, oldugu gibi hedefe gider.
+/// Android'de VPN butun trafigi proxy'ye verir; oyunlar, sesli gorusmeler ve QUIC bu yoldan
+/// gecer. Iliski, denetim baglantisi (bu TCP baglantisi) kapanana kadar surer. Bosta hicbir is
+/// parcacigi uyanmaz: kapanista engelli `recv` cagrilari kendilerine yollanan bos datagramla
+/// uyandirilir.
+fn udp_associate(c: &mut TcpStream, s: &Shared) {
+    let client_ip = match c.peer_addr() {
+        Ok(a) => a.ip(),
+        Err(_) => return,
+    };
+    let relay = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0));
+    let out = outbound_udp();
+    let (Ok(relay), Ok(out)) = (relay, out) else {
+        let _ = c.write_all(&socks_reply(1));
+        return;
+    };
+    let (Ok(relay_addr), Ok(out_port)) = (relay.local_addr(), out.local_addr().map(|a| a.port())) else { return };
+    let mut reply = socks_reply(0);
+    reply[4..8].copy_from_slice(&[127, 0, 0, 1]);
+    reply[8..10].copy_from_slice(&relay_addr.port().to_be_bytes());
+    if c.write_all(&reply).is_err() {
+        return;
+    }
+    let _ = c.set_read_timeout(None);
+
+    let relay = Arc::new(relay);
+    let out = Arc::new(out);
+    let stop = Arc::new(AtomicBool::new(false));
+    // Istemcinin (tun2proxy) datagram adresi ilk datagramla ogrenilir.
+    let client = Arc::new(RwLock::new(None::<SocketAddr>));
+
+    let down = {
+        let (relay, out, stop, client) = (relay.clone(), out.clone(), stop.clone(), client.clone());
+        thread::Builder::new().name("proxy-udp-down".into()).stack_size(STACK).spawn(move || {
+            let mut buf = vec![0u8; UDP_BUF];
+            while let Ok((n, from)) = out.recv_from(&mut buf[UDP_HEAD..]) {
+                if stop.load(Ordering::SeqCst) {
+                    return;
+                }
+                let Some(to) = *client.read().unwrap() else { continue };
+                let from = unmap(from);
+                let head = udp_header(from);
+                let start = UDP_HEAD - head.len();
+                buf[start..UDP_HEAD].copy_from_slice(&head);
+                let _ = relay.send_to(&buf[start..UDP_HEAD + n], to);
+            }
+        })
+    };
+    let Ok(down) = down else { return };
+
+    let up = {
+        let (relay, out, stop, client) = (relay.clone(), out.clone(), stop.clone(), client.clone());
+        let resolver = s.resolver.clone();
+        let own = s.addr;
+        let out_v6 = out.local_addr().is_ok_and(|a| a.is_ipv6());
+        thread::Builder::new().name("proxy-udp-up".into()).stack_size(STACK).spawn(move || {
+            let mut buf = vec![0u8; UDP_BUF];
+            let mut names: std::collections::HashMap<String, IpAddr> = std::collections::HashMap::new();
+            while let Ok((n, from)) = relay.recv_from(&mut buf) {
+                if stop.load(Ordering::SeqCst) {
+                    return;
+                }
+                // Yalnizca denetim baglantisinin sahibi; ilk datagramin portuna kilitlenir.
+                if from.ip() != client_ip {
+                    continue;
+                }
+                {
+                    let mut c = client.write().unwrap();
+                    match *c {
+                        Some(known) if known != from => continue,
+                        Some(_) => {}
+                        None => *c = Some(from),
+                    }
+                }
+                let Some((target, data)) = parse_udp(&buf[..n]) else { continue };
+                let ip = match target.0 {
+                    UdpHost::Ip(ip) => ip,
+                    UdpHost::Name(name) => match names.get(&name) {
+                        Some(ip) => *ip,
+                        None => {
+                            let Some(ip) = resolver.resolve(&name).ok().and_then(|v| v.iter().copied().find(IpAddr::is_ipv4).or(v.first().copied())) else {
+                                continue;
+                            };
+                            if names.len() >= 64 {
+                                names.clear();
+                            }
+                            names.insert(name, ip);
+                            ip
+                        }
+                    },
+                };
+                if ip.is_unspecified() || (ip.is_loopback() && target.1 == own.port()) {
+                    continue;
+                }
+                let _ = out.send_to(data, SocketAddr::new(map_v4(ip, out_v6), target.1));
+            }
+        })
+    };
+    let Ok(up) = up else {
+        stop.store(true, Ordering::SeqCst);
+        let _ = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).and_then(|w| w.send_to(&[], (Ipv4Addr::LOCALHOST, out_port)));
+        let _ = down.join();
+        return;
+    };
+
+    // Denetim baglantisi kapanana kadar bekle (istemci bu baglantiya bir sey yazmaz).
+    let mut sink = [0u8; 64];
+    while matches!(c.read(&mut sink), Ok(n) if n > 0) {}
+    stop.store(true, Ordering::SeqCst);
+    if let Ok(waker) = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)) {
+        let _ = waker.send_to(&[], relay_addr);
+        let _ = waker.send_to(&[], (Ipv4Addr::LOCALHOST, out_port));
+    }
+    let _ = up.join();
+    let _ = down.join();
+}
+
+/// SOCKS UDP basligi en fazla bu kadar (IPv6 adresli); veri bunun arkasina okunur.
+const UDP_HEAD: usize = 4 + 16 + 2;
+const UDP_BUF: usize = UDP_HEAD + 65536;
+
+/// Disariya giden datagramlarin soketi: tek soket hem IPv6 hem IPv4 hedeflere yollar (IPv4
+/// adresler `::ffff:a.b.c.d` bicimine cevrilir). IPv6 yoksa yalnizca IPv4.
+fn outbound_udp() -> io::Result<UdpSocket> {
+    let dual = socket2::Socket::new(socket2::Domain::IPV6, socket2::Type::DGRAM, Some(socket2::Protocol::UDP)).and_then(|sock| {
+        sock.set_only_v6(false)?;
+        sock.bind(&SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)).into())?;
+        Ok(UdpSocket::from(sock))
+    });
+    dual.or_else(|_| UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)))
+}
+
+/// IPv6 soketten IPv4 hedefe yollamak icin `::ffff:a.b.c.d`; IPv4 sokette oldugu gibi kalir.
+fn map_v4(ip: IpAddr, v6_socket: bool) -> IpAddr {
+    match ip {
+        IpAddr::V4(v4) if v6_socket => IpAddr::V6(v4.to_ipv6_mapped()),
+        other => other,
+    }
+}
+
+fn unmap(a: SocketAddr) -> SocketAddr {
+    match a {
+        SocketAddr::V6(v6) => match v6.ip().to_ipv4_mapped() {
+            Some(v4) => SocketAddr::new(IpAddr::V4(v4), v6.port()),
+            None => a,
+        },
+        v4 => v4,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum UdpHost {
+    Ip(IpAddr),
+    Name(String),
+}
+
+/// "RSV RSV FRAG ATYP ADDR PORT DATA". Parcali (FRAG != 0) datagramlar desteklenmez.
+fn parse_udp(d: &[u8]) -> Option<((UdpHost, u16), &[u8])> {
+    if d.len() < 4 || d[0] != 0 || d[1] != 0 || d[2] != 0 {
+        return None;
+    }
+    let (host, rest) = match d[3] {
+        1 => (UdpHost::Ip(IpAddr::from(<[u8; 4]>::try_from(d.get(4..8)?).ok()?)), &d[8..]),
+        4 => (UdpHost::Ip(IpAddr::from(<[u8; 16]>::try_from(d.get(4..20)?).ok()?)), &d[20..]),
+        3 => {
+            let len = *d.get(4)? as usize;
+            let name = std::str::from_utf8(d.get(5..5 + len)?).ok()?.trim_end_matches('.').to_ascii_lowercase();
+            if name.is_empty() {
+                return None;
+            }
+            (UdpHost::Name(name), &d[5 + len..])
+        }
+        _ => return None,
+    };
+    let port = u16::from_be_bytes(rest.get(..2)?.try_into().ok()?);
+    if port == 0 {
+        return None;
+    }
+    Some(((host, port), &rest[2..]))
+}
+
+fn udp_header(from: SocketAddr) -> Vec<u8> {
+    let mut h = vec![0, 0, 0];
+    match from.ip() {
+        IpAddr::V4(v4) => {
+            h.push(1);
+            h.extend_from_slice(&v4.octets());
+        }
+        IpAddr::V6(v6) => {
+            h.push(4);
+            h.extend_from_slice(&v6.octets());
+        }
+    }
+    h.extend_from_slice(&from.port().to_be_bytes());
+    h
 }
 
 // ---------------------------------------------------------------- hedefe baglanti
@@ -585,6 +788,15 @@ fn send_first(mut client: &TcpStream, mut up: &TcpStream, mut first: Vec<u8>, ho
     }
 
     let scope = s.scope.read().unwrap().clone();
+    // Hedef IP olarak geldiyse (uygulama adi kendi cozdu) kapsam icin ad ilk mesajdan okunur.
+    let named;
+    let host = match host.parse::<IpAddr>() {
+        Ok(_) => {
+            named = message_host(&first);
+            named.as_deref().unwrap_or(host)
+        }
+        Err(_) => host,
+    };
     if scope.is_some_and(|sc| sc.decide(Some(host)) != engine::scope::Decision::Bypass) {
         return up.write_all(&first);
     }
@@ -615,6 +827,17 @@ fn send_first(mut client: &TcpStream, mut up: &TcpStream, mut first: Vec<u8>, ho
         r?;
     }
     Ok(())
+}
+
+/// TLS ClientHello'daki SNI ya da HTTP istegindeki Host adi (kucuk harf, portsuz).
+fn message_host(msg: &[u8]) -> Option<String> {
+    match engine::tls::find_sni(msg) {
+        Some((off, len)) => {
+            let name = std::str::from_utf8(msg.get(off..off + len)?).ok()?.trim_end_matches('.').to_ascii_lowercase();
+            (!name.is_empty()).then_some(name)
+        }
+        None => split_host_port(engine::tls::http_host(msg)?, 80).map(|(name, _)| name),
+    }
 }
 
 fn set_ttl(sock: &SockRef<'_>, v6: bool, ttl: u32) -> io::Result<()> {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Arayuz cizilene kadar gorunen zemin (tokens.slint: Theme.bg). -->
+    <color name="bg">#F2F2F7</color>
+    <color name="icon_bg">#2DC253</color>
+</resources>

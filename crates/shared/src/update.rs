@@ -30,6 +30,9 @@ pub const MAC_PACKAGE_NAME: &str = "DPI-UI-Mac.zip";
 pub const MAC_DMG_NAME: &str = "DPI-UI-Mac.dmg";
 pub const MAC_MANIFEST_NAME: &str = "update-mac.json";
 pub const MAC_SIGNATURE_NAME: &str = "update-mac.json.sig";
+pub const ANDROID_PACKAGE_NAME: &str = "DPI-UI-Android.apk";
+pub const ANDROID_MANIFEST_NAME: &str = "update-android.json";
+pub const ANDROID_SIGNATURE_NAME: &str = "update-android.json.sig";
 
 /// Surum imzalarini dogrulayan Ed25519 acik anahtari. Ozel anahtar depoda degildir;
 /// yalnizca surum yayinlayan bilgisayarda durur (`tools/release`).
@@ -198,6 +201,11 @@ impl Manifest {
     /// Mac paketinin manifesti.
     pub fn check_mac(&self, expected: &Version) -> Result<(), String> {
         self.check_files(expected, &[MAC_PACKAGE_NAME])
+    }
+
+    /// Android paketinin (APK) manifesti.
+    pub fn check_android(&self, expected: &Version) -> Result<(), String> {
+        self.check_files(expected, &[ANDROID_PACKAGE_NAME])
     }
 
     fn check_files(&self, expected: &Version, files: &[&str]) -> Result<(), String> {

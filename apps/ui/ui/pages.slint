@@ -239,6 +239,8 @@ export component SettingsMenu inherits Page {
                     title: @tr("Genel");
                     value: AppState.mac
                         ? (AppState.tray-at-login ? @tr("Mac açılınca başlar") : @tr("Elle başlar"))
+                        : AppState.mobile
+                        ? (AppState.tray-at-login ? @tr("Telefon açılınca başlar") : @tr("Elle başlar"))
                         : (AppState.start-with-windows ? @tr("Windows ile başlar") : @tr("Elle başlar"));
                     clicked => {
                         root.open(4);
@@ -314,8 +316,8 @@ export component MethodPage inherits SubPage {
     property <bool> picked-in-more: AppState.method-index >= AppState.methods-main.length;
     property <bool> show-more: root.more-open || root.picked-in-more;
 
-    // Mac: saglayiciya gore oneri yerine yontemler bu hatta denenir.
-    if AppState.mac: Group {
+    // Mac ve Android: saglayiciya gore oneri yerine yontemler bu hatta denenir.
+    if AppState.proxy-engine: Group {
         footer: @tr("Engelli siteleri her yöntemle dener, açanı seçer.");
         ActionRow {
             first: true;
@@ -328,7 +330,7 @@ export component MethodPage inherits SubPage {
         }
     }
 
-    if !AppState.mac: Group {
+    if !AppState.proxy-engine: Group {
         PickerRow {
             first: true;
             last: true;
@@ -598,7 +600,7 @@ export component DnsPage inherits SubPage {
         header: @tr("GÜVENLİK");
         ToggleRow {
             first: true;
-            last: AppState.mac;
+            last: AppState.proxy-engine;
             title: @tr("Ulaşılamazsa sistem DNS'ine dön");
             checked: AppState.dns-fallback;
             toggled(v) => {
@@ -606,7 +608,7 @@ export component DnsPage inherits SubPage {
             }
         }
 
-        if !AppState.mac: ToggleRow {
+        if !AppState.proxy-engine: ToggleRow {
             last: true;
             title: @tr("VPN bağlıyken DNS'e dokunma");
             checked: AppState.dns-skip-vpn;
@@ -685,7 +687,7 @@ export component SitesPage inherits SubPage {
         }
     }
 
-    if AppState.scope-mode == 0 && !AppState.mac: Group {
+    if AppState.scope-mode == 0 && !AppState.proxy-engine: Group {
         ToggleRow {
             first: true;
             last: true;
@@ -722,7 +724,7 @@ export component SitesPage inherits SubPage {
         }
     }
 
-    if AppState.scope-mode == 0 && !AppState.mac: Group {
+    if AppState.scope-mode == 0 && !AppState.proxy-engine: Group {
         header: @tr("ÖĞRENİLENLER");
         if AppState.learned.length == 0: EmptyRow {
             first: true;
@@ -769,8 +771,8 @@ export component GeneralPage inherits SubPage {
 
     Group {
         header: @tr("BAŞLANGIÇ");
-        // Mac'te motor uygulamanin icinde: ayri bir hizmet baslatma ayari yok.
-        if !AppState.mac: ToggleRow {
+        // Mac ve Android'de motor uygulamanin icinde: ayri bir hizmet baslatma ayari yok.
+        if !AppState.proxy-engine: ToggleRow {
             first: true;
             title: @tr("Windows açılınca motoru başlat");
             checked: AppState.start-with-windows;
@@ -780,7 +782,7 @@ export component GeneralPage inherits SubPage {
         }
 
         ToggleRow {
-            first: AppState.mac;
+            first: AppState.proxy-engine;
             title: @tr("Açılışta otomatik bağlan");
             checked: AppState.auto-connect;
             toggled(v) => {
@@ -790,7 +792,7 @@ export component GeneralPage inherits SubPage {
 
         ToggleRow {
             last: true;
-            title: AppState.mac ? @tr("Mac açılınca menü çubuğunda başlat") : @tr("Oturum açılınca tepside başlat");
+            title: AppState.mac ? @tr("Mac açılınca menü çubuğunda başlat") : AppState.mobile ? @tr("Telefon açılınca başlat") : @tr("Oturum açılınca tepside başlat");
             checked: AppState.tray-at-login;
             toggled(v) => {
                 AppState.set-tray-at-login(v);
@@ -798,7 +800,8 @@ export component GeneralPage inherits SubPage {
         }
     }
 
-    Group {
+    // Telefonda pencere ve tepsi yok.
+    if !AppState.mobile: Group {
         header: @tr("PENCERE");
         ToggleRow {
             first: true;
@@ -830,7 +833,7 @@ export component GeneralPage inherits SubPage {
         ActionRow {
             first: true;
             last: true;
-            text: @tr("Günlüğü aç");
+            text: AppState.mobile ? @tr("Günlüğü paylaş") : @tr("Günlüğü aç");
             activated => {
                 AppState.open-logs();
             }
@@ -1028,7 +1031,7 @@ export component AppearancePage inherits SubPage {
         CheckRow {
             first: true;
             title: @tr("Sistem");
-            subtitle: AppState.mac ? @tr("Mac'in dilini kullanır") : @tr("Windows'un dilini kullanır");
+            subtitle: AppState.mac ? @tr("Mac'in dilini kullanır") : AppState.mobile ? @tr("Telefonun dilini kullanır") : @tr("Windows'un dilini kullanır");
             selected: AppState.language-index == 0;
             clicked => {
                 AppState.select-language(0);

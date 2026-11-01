@@ -52,6 +52,22 @@ kapanınca yeni `DPI UI.app`'i eskisinin yerine koyar ve yeniden açılır (yön
 gerekmez). `release.ps1` yayından sonra Mac paketini bekleyip yerel anahtarla imzalar
 (`release-mac.ps1`).
 
+### Android
+
+[Releases](https://github.com/unsalable/dpi-ui/releases) sayfasından `DPI-UI-Android.apk` dosyasını
+telefona indirip açın (Android 8 ve üstü, 64-bit). İlk kurulumda Android "bilinmeyen uygulamalar"
+iznini bir kez sorar. Arayüz bilgisayardakiyle aynıdır; ilk bağlanışta Android VPN iznini sorar.
+
+Telefonda paket sürücüsü olmadığı için motor Mac'tekiyle aynıdır: uygulama bir VPN arayüzü açar,
+telefonun trafiği bu arayüzden uygulamanın içindeki yerel proxy'ye gelir; proxy yalnızca listedeki
+sitelere giden ilk mesajı böler (TLS kaydı bölme), gerisini olduğu gibi geçirir. Trafik hiçbir
+sunucuya gönderilmez; "VPN" yalnızca Android'in trafiği uygulamaya vermesinin yoludur. UDP (oyunlar,
+sesli görüşme) dokunulmadan geçer. Bağlıyken bildirimde yöntem ve DNS görünür, "Bağlantıyı kes"
+oradadır; bildirim panelindeki **DPI UI** hızlı ayarı tek dokunuşla bağlar/keser. "Telefon açılınca
+başlat" açıksa telefon açılınca kendiliğinden bağlanır. Güncellemeler aynı imza zinciriyle gelir:
+uygulama imzalı `update-android.json`'u ve APK'nin SHA-256'sını doğrular, kurulumu Android'in paket
+yükleyicisi yapar (Android 12+'da ilk güncellemeden sonra onay sormadan).
+
 ## Güncellemeler nasıl çalışır
 
 Motor hizmeti Windows açılınca, oturum açılınca, uygulama açılınca ve altı saatte bir bu deponun
@@ -77,6 +93,17 @@ Gereksinimler: Rust (MSVC), Visual Studio C++ araçları, Inno Setup 6.
 cargo test --workspace
 powershell -ExecutionPolicy Bypass -File publish.ps1   # -> build\DPI-UI-Setup.exe
 ```
+
+Android paketi (Android SDK, NDK, JDK 17 ve `cargo install cargo-ndk` gerekir):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build-android.ps1          # -> build\DPI-UI-Android.apk
+powershell -ExecutionPolicy Bypass -File build-android.ps1 -Debug   # emülatör için hızlı deneme paketi
+```
+
+Android kodu: `apps/mobile` (Rust; masaüstü arayüz kodunu ortak kullanır, kök ekran
+`apps/ui/ui/mobile.slint`) ve `apps/android` (VPN hizmeti, bildirim, açılış alıcısı, hızlı ayar).
+Telefon arayüzünün testleri de bilgisayarda çalışır: `cargo test -p dpi-ui-mobile`.
 
 Arayüz testleri pencere açmadan bellekte çizer; `GDPI3_SHOTS=<klasör>` verilirse her sayfanın ve
 bağlanma animasyonunun ekran görüntülerini PNG olarak yazar. Pencere/tepsi kapanma senaryoları:
@@ -106,7 +133,10 @@ Canlı motor testi (yönetici terminali, uygulamada bağlantı kesikken):
 ## Sürüm yayınlama
 
 İmza anahtarı depoda değildir; yalnızca yayın yapan bilgisayarda
-(`%USERPROFILE%\.dpi-ui\release-signing.pk8`) durur.
+(`%USERPROFILE%\.dpi-ui\release-signing.pk8`) durur. Android paketinin imza anahtarı da orada
+(`android-release.jks` ve şifresi `android-release.pass`); kaybolursa yüklü Android uygulamaları yeni
+sürümü kabul etmez. `release.ps1` Windows yayınından sonra APK'yi derleyip yayına ekler
+(`release-android.ps1`, `-NoAndroid` ile atlanır).
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File release.ps1 -Version 3.0.1 -Bump -Notes "Değişiklikler"

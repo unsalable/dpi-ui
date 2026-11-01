@@ -1,0 +1,153 @@
+// Sayfa gezinmesi: ana ekran, ayarlar menusu, alt sayfalar ve bildirim. Masaustu penceresi
+// (app.slint) ve telefon (mobile.slint) ayni gezinmeyi kullanir; pencereye ozgu dugmeler
+// @children olarak sayfalarin ustune, bildirimin altina gelir.
+
+import { Motion, Curves } from "tokens.slint";
+import { Toast } from "widgets.slint";
+import { AppState } from "state.slint";
+import { HomePage, SettingsMenu, MethodPage, DnsPage, SitesPage, GeneralPage, AppearancePage, AboutPage } from "pages.slint";
+
+export component Shell inherits Rectangle {
+    /// 0 = ana ekran, 1 = ayarlar menusu, 2 = alt sayfa.
+    in-out property <int> depth: 0;
+    /// Alt sayfa: 1 yontem, 2 dns, 3 siteler, 4 genel, 5 gorunum, 6 hakkinda.
+    in-out property <int> sub: 0;
+    /// Alt sayfaya ana ekrandan dogrudan gelindiyse geri tusu ana ekrana doner.
+    in-out property <bool> sub-from-home: false;
+    /// Rust tarafi sayaclari yalnizca ana ekran gorunurken yeniler.
+    callback page-changed(int, int);
+    out property <bool> toast-visible: toast.visible-now;
+    out property <length> home-x: home.x;
+    out property <length> menu-x: menu.x;
+
+    clip: true;
+
+    function go(d: int, s: int) {
+        root.depth = d;
+        root.sub = s;
+        root.page-changed(d, s);
+    }
+
+    /// Bir onceki ekrana doner (telefonda geri tusu da bunu cagirir).
+    public function back() {
+        if (root.depth == 2 && root.sub-from-home) {
+            root.sub-from-home = false;
+            root.go(0, root.sub);
+        } else {
+            root.go(max(0, root.depth - 1), root.sub);
+        }
+    }
+
+    // Ayarlar menusu, dugmesinin oldugu sol taraftan gelir; ana ekran %30 saga kayar ve kararir.
+    // Alt sayfalar iOS itme gecisiyle sagdan gelir; alttaki sayfa %30 sola kayar ve kararir.
+    property <length> w: self.width;
+    property <bool> menu-shown: root.depth == 1 || (root.depth == 2 && !root.sub-from-home);
+
+    home := HomePage {
+        x: root.depth == 0 ? 0px : root.menu-shown ? root.w * 0.3 : -root.w * 0.3;
+        width: parent.width;
+        height: parent.height;
+        covered: root.depth == 0 ? 0 : 1;
+        animate x, covered { duration: Motion.push; easing: Curves.push; }
+        open-settings => {
+            root.sub-from-home = false;
+            root.go(1, root.sub);
+        }
+        open-method => {
+            root.sub-from-home = true;
+            root.go(2, 1);
+        }
+        open-dns => {
+            root.sub-from-home = true;
+            root.go(2, 2);
+        }
+    }
+
+    // Karartma yalnizca ustune alt sayfa itilince: soldan gelirken ya da sola cekilirken kararmaz.
+    menu := SettingsMenu {
+        x: !root.menu-shown ? -root.w : root.depth == 1 ? 0px : -root.w * 0.3;
+        width: parent.width;
+        height: parent.height;
+        covered: root.menu-shown && root.depth == 2 ? 1 : 0;
+        animate x, covered { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+        open(page) => {
+            root.go(2, page);
+        }
+    }
+
+    MethodPage {
+        x: root.depth == 2 && root.sub == 1 ? 0px : root.w;
+        width: parent.width;
+        height: parent.height;
+        back-text: root.sub-from-home ? "" : @tr("Ayarlar");
+        animate x { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+    }
+
+    DnsPage {
+        x: root.depth == 2 && root.sub == 2 ? 0px : root.w;
+        width: parent.width;
+        height: parent.height;
+        back-text: root.sub-from-home ? "" : @tr("Ayarlar");
+        animate x { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+    }
+
+    SitesPage {
+        x: root.depth == 2 && root.sub == 3 ? 0px : root.w;
+        width: parent.width;
+        height: parent.height;
+        animate x { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+    }
+
+    GeneralPage {
+        x: root.depth == 2 && root.sub == 4 ? 0px : root.w;
+        width: parent.width;
+        height: parent.height;
+        animate x { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+    }
+
+    AppearancePage {
+        x: root.depth == 2 && root.sub == 5 ? 0px : root.w;
+        width: parent.width;
+        height: parent.height;
+        animate x { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+    }
+
+    AboutPage {
+        x: root.depth == 2 && root.sub == 6 ? 0px : root.w;
+        width: parent.width;
+        height: parent.height;
+        animate x { duration: Motion.push; easing: Curves.push; }
+        back => {
+            root.back();
+        }
+    }
+
+    @children
+
+    toast := Toast {
+        width: min(parent.width - 32px, self.preferred-width);
+        x: (parent.width - self.width) / 2;
+        bottom: parent.height;
+        text: AppState.toast;
+        error: AppState.toast-error;
+        serial: AppState.toast-serial;
+    }
+}

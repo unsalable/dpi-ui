@@ -1,0 +1,62 @@
+// DPI UI Android paketi. Uygulamanin kendisi Rust'ta (apps/mobile -> libdpiui.so); bu proje
+// yalnizca Java parcalarini (etkinlik, VPN hizmeti, bildirim, acilis alicisi, hizli ayar) ve
+// kaynaklari paketler. Yerel kutuphaneler build-android.ps1 ile src/main/jniLibs altina gelir.
+
+plugins {
+    id "com.android.application"
+}
+
+// Surum tek yerden: calisma alaninin Cargo.toml'u ([workspace.package] version).
+def cargoVersion = {
+    def text = rootProject.file("../../Cargo.toml").getText("UTF-8")
+    def m = text =~ /(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"/
+    if (!m.find()) throw new GradleException("Cargo.toml'da surum bulunamadi")
+    [name: "${m.group(1)}.${m.group(2)}.${m.group(3)}",
+     code: m.group(1).toInteger() * 10000 + m.group(2).toInteger() * 100 + m.group(3).toInteger()]
+}()
+
+// Yayin imzasi: anahtar depoda degil (%USERPROFILE%\.dpi-ui\android-release.jks); sifre ortam
+// degiskeninden. Yoksa yayin paketi hata ayiklama anahtariyla imzalanir (yalnizca deneme icin).
+def releaseKey = new File(System.getProperty("user.home"), ".dpi-ui/android-release.jks")
+def releasePass = System.getenv("DPI_UI_ANDROID_KEY_PASS")
+
+android {
+    namespace "io.github.unsalable.dpiui"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "io.github.unsalable.dpiui"
+        minSdk 26
+        targetSdk 36
+        versionCode cargoVersion.code
+        versionName cargoVersion.name
+    }
+
+    signingConfigs {
+        if (releaseKey.exists() && releasePass) {
+            release {
+                storeFile releaseKey
+                storePassword releasePass
+                keyAlias "dpi-ui"
+                keyPassword releasePass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.findByName("release") ?: signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        // Kutuphane (Skia dahil ~20 MB) pakette sikistirilir: indirme ~3 kat kucuk. Kurulumda acilir.
+        jniLibs { useLegacyPackaging true }
+    }
+}

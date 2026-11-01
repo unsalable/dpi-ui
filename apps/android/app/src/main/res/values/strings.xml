@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">DPI UI</string>
+    <string name="protected_title">Protected</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="channel">Connection status</string>
+    <string name="no_vpn_permission">VPN permission is missing.</string>
+    <string name="updates_channel">Updates</string>
+    <string name="update_ready">DPI UI update ready</string>
+    <string name="update_tap">Tap to install.</string>
+</resources>

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -135,20 +135,24 @@ fn scope_limits_reshaping_to_listed_sites() {
     scope.targets.insert(NAME);
     scope.excluded.insert("haric.test.example");
     proxy.set_scope(Some(scope));
-    let send = |host: &str| {
+    let send_hello = |host: &str, hello: &[u8]| {
         let mut c = client(&proxy);
         write!(c, "CONNECT {host}:{port} HTTP/1.1\r\n\r\n").unwrap();
         assert!(read_head(&mut c).starts_with("HTTP/1.1 200"));
-        c.write_all(&hello()).unwrap();
+        c.write_all(hello).unwrap();
         c.shutdown(Shutdown::Write).unwrap();
         rx.recv_timeout(Duration::from_secs(5)).unwrap()
     };
+    let send = |host: &str| send_hello(host, &hello());
     // Listede (alt alan adi da): bolunur. Listede degil ya da istisna: oldugu gibi.
     assert_eq!(send(NAME).len(), hello().len() + 5);
     assert_eq!(send(&format!("cdn.{NAME}")).len(), hello().len() + 5);
-    assert_eq!(send("127.0.0.1"), hello(), "listede olmayan site");
     assert_eq!(send("haric.test.example"), hello(), "istisna");
-    assert_eq!(events.lock().unwrap().iter().filter(|e| matches!(e, Event::Desynced { .. })).count(), 2);
+    // Hedef IP ise site adi ClientHello'dan okunur (Android: uygulama adi kendi cozdu).
+    assert_eq!(send("127.0.0.1").len(), hello().len() + 5, "IP ile gelen listedeki site");
+    let other = engine::fakes::build_client_hello("baska.example", 517, false);
+    assert_eq!(send_hello("127.0.0.1", &other), other, "IP ile gelen listede olmayan site");
+    assert_eq!(events.lock().unwrap().iter().filter(|e| matches!(e, Event::Desynced { .. })).count(), 3);
 }
 
 #[test]
@@ -283,4 +287,87 @@ fn listens_only_on_loopback_and_stop_closes_the_port() {
     assert!(addr.ip().is_loopback());
     proxy.stop();
     assert!(TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_err());
+}
+
+/// SOCKS5 el sikismasi ve istek; yanit (10 bayt, IPv4 adresli) doner.
+fn socks_request(c: &mut TcpStream, cmd: u8, addr: &[u8], port: u16) -> [u8; 10] {
+    c.write_all(&[5, 1, 0]).unwrap();
+    let mut r = [0u8; 2];
+    c.read_exact(&mut r).unwrap();
+    assert_eq!(r, [5, 0]);
+    let mut req = vec![5, cmd, 0];
+    req.extend_from_slice(addr);
+    req.extend_from_slice(&port.to_be_bytes());
+    c.write_all(&req).unwrap();
+    let mut reply = [0u8; 10];
+    c.read_exact(&mut reply).unwrap();
+    reply
+}
+
+#[test]
+fn socks5_udp_associate_relays_datagrams_untouched() {
+    // Gelen her datagrami basina "yanit:" ekleyip geri yollayan sunucu.
+    let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let server_port = server.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let mut buf = [0u8; 2048];
+        while let Ok((n, from)) = server.recv_from(&mut buf) {
+            let mut out = b"yanit:".to_vec();
+            out.extend_from_slice(&buf[..n]);
+            let _ = server.send_to(&out, from);
+        }
+    });
+
+    let (proxy, _) = start(presets::TLS_RECORD.desync());
+    let mut control = client(&proxy);
+    let reply = socks_request(&mut control, 3, &[1, 0, 0, 0, 0], 0);
+    assert_eq!(reply[..2], [5, 0]);
+    let relay = SocketAddr::from(([reply[4], reply[5], reply[6], reply[7]], u16::from_be_bytes([reply[8], reply[9]])));
+    assert!(relay.ip().is_loopback(), "aktarma soketi yalnizca 127.0.0.1'de");
+
+    let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+    udp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut by_ip = vec![0, 0, 0, 1, 127, 0, 0, 1];
+    by_ip.extend_from_slice(&server_port.to_be_bytes());
+    let mut by_name = vec![0, 0, 0, 3, NAME.len() as u8];
+    by_name.extend_from_slice(NAME.as_bytes());
+    by_name.extend_from_slice(&server_port.to_be_bytes());
+    // Gecersiz basliklar (parcali, bilinmeyen adres turu) sessizce atilir.
+    udp.send_to(&[0, 0, 1, 1, 127, 0, 0, 1, 0, 1, b'x'], relay).unwrap();
+    udp.send_to(&[0, 0, 0, 9, b'x'], relay).unwrap();
+    let tls_like: &[u8] = &[0x16, 0x03, 0x01, b' ', b'o', b'y', b'u', b'n'];
+    for (head, body) in [(&by_ip, tls_like), (&by_name, &b"ses paketi"[..])] {
+        let mut d = head.clone();
+        d.extend_from_slice(body);
+        udp.send_to(&d, relay).unwrap();
+        let mut buf = [0u8; 2048];
+        let (n, from) = udp.recv_from(&mut buf).unwrap();
+        assert_eq!(from, relay);
+        // Yanit basligi kaynagi gosterir; veri parcalanmadan ve degismeden gelir.
+        assert_eq!(&buf[..4], &[0, 0, 0, 1]);
+        assert_eq!(&buf[4..8], &[127, 0, 0, 1]);
+        assert_eq!(u16::from_be_bytes([buf[8], buf[9]]), server_port);
+        let mut want = b"yanit:".to_vec();
+        want.extend_from_slice(body);
+        assert_eq!(&buf[10..n], &want[..]);
+    }
+
+    // Baska bir yerel porttan gelen datagram ilk istemciye ait iliskiye karismaz.
+    let stranger = UdpSocket::bind("127.0.0.1:0").unwrap();
+    stranger.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    let mut d = by_ip.clone();
+    d.extend_from_slice(b"yabanci");
+    stranger.send_to(&d, relay).unwrap();
+    assert!(stranger.recv_from(&mut [0u8; 64]).is_err());
+
+    // Denetim baglantisi kapaninca iliski biter (is parcaciklari doner, sayac duser).
+    assert_eq!(proxy.stats().active, 1);
+    drop(control);
+    for _ in 0..50 {
+        if proxy.stats().active == 0 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(proxy.stats().active, 0, "iliski kapanmali");
 }

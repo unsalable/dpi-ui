@@ -260,3 +260,15 @@ msgstr "Not checked yet"
 
 msgid "Kaldır: {}"
 msgstr "Remove: {}"
+
+msgid "Telefon açılınca başlar"
+msgstr "Starts with your phone"
+
+msgid "Telefon açılınca başlat"
+msgstr "Start when the phone turns on"
+
+msgid "Telefonun dilini kullanır"
+msgstr "Uses your phone's language"
+
+msgid "Günlüğü paylaş"
+msgstr "Share log"
