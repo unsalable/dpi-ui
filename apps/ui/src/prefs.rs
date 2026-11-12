@@ -39,6 +39,25 @@ pub fn load() -> Prefs {
         .unwrap_or_default()
 }
 
+/// Motor hizmetinin diske kaydettigi ayar (`dir` = hizmetin veri klasoru; Windows'ta
+/// `%ProgramData%\GoodbyeDPI3`, kullanicilar okuyabilir, yalnizca hizmet yazar). Hizmet
+/// kapaliyken ekran bunu gosterir. Dosya yoksa hizmet de varsayilanlarla calisir; okunamazsa `None`.
+pub fn saved_config(dir: &std::path::Path) -> Option<shared::config::AppConfig> {
+    match std::fs::read_to_string(dir.join("config.json")) {
+        Ok(text) => serde_json::from_str::<shared::config::AppConfig>(&text).ok().map(|c| c.sanitized()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(shared::config::AppConfig::default().sanitized()),
+        Err(_) => None,
+    }
+}
+
+/// Hizmetin ogrendigi siteler (`learned.json`, yalnizca Windows hizmeti yazar).
+pub fn saved_learned(dir: &std::path::Path) -> Vec<shared::ipc::LearnedHost> {
+    std::fs::read_to_string(dir.join("learned.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
 pub fn save(p: &Prefs) {
     let Some(path) = path() else { return };
     if let Some(dir) = path.parent() {

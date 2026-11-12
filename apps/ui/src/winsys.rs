@@ -122,6 +122,18 @@ pub fn claim_mutex(name: &str) -> bool {
 
 /// Motor hizmetini baslatir (kurulum, etkilesimli kullanicilara baslatma izni verir).
 pub fn start_service() -> Result<(), String> {
+    start_service_with(&[])
+}
+
+/// Hizmet yalnizca ayar degisikligini kaydetmek icin baslatilir: "acilista otomatik baglan"
+/// bu kez uygulanmaz (hizmet `--no-auto-connect` baslatma argumanini gorur).
+pub fn start_service_without_connecting() -> Result<(), String> {
+    start_service_with(&[shared::ipc::NO_AUTO_CONNECT_ARG])
+}
+
+fn start_service_with(args: &[&str]) -> Result<(), String> {
+    let wide_args: Vec<Vec<u16>> = args.iter().map(|a| wide(a)).collect();
+    let argv: Vec<*const u16> = wide_args.iter().map(|a| a.as_ptr()).collect();
     unsafe {
         let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT);
         if scm.is_null() {
@@ -130,7 +142,9 @@ pub fn start_service() -> Result<(), String> {
         let svc = OpenServiceW(scm, wide(shared::SERVICE_NAME).as_ptr(), SERVICE_START);
         let result = if svc.is_null() {
             Err(shared::t!("Motor hizmeti kurulu değil. Uygulamayı yeniden kurmayı dene.", "The engine service isn't installed. Try reinstalling the app."))
-        } else if StartServiceW(svc, 0, std::ptr::null()) == 0 && GetLastError() != 1056 {
+        } else if StartServiceW(svc, argv.len() as u32, if argv.is_empty() { std::ptr::null() } else { argv.as_ptr() }) == 0
+            && GetLastError() != 1056
+        {
             // 1056 = zaten calisiyor.
             Err(shared::t!("Motor hizmeti başlatılamadı (hata {}).", "Couldn't start the engine service (error {}).", GetLastError()))
         } else {

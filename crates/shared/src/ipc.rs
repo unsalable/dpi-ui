@@ -14,6 +14,9 @@ use crate::update::UpdateStatus;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\GoodbyeDPI3";
 pub const PROTOCOL_VERSION: u32 = 1;
+/// Windows hizmetinin baslatma argumani: arayuz hizmeti yalnizca bir ayari kaydetmek icin
+/// baslatti; "acilista otomatik baglan" bu kez uygulanmaz.
+pub const NO_AUTO_CONNECT_ARG: &str = "--no-auto-connect";
 /// Tek mesajin en buyuk boyutu: bozuk/kotu niyetli istemci bellegi sisiremesin.
 pub const MAX_MESSAGE: usize = 1 << 20;
 

@@ -38,7 +38,9 @@ struct App {
 }
 
 impl App {
-    fn start(as_service: bool) -> App {
+    /// `auto_connect`: ayardaki "acilista otomatik baglan" uygulansin mi (arayuz hizmeti yalnizca
+    /// bir ayari kaydetmek icin baslattiysa hayir).
+    fn start(as_service: bool, auto_connect: bool) -> App {
         store::ensure_data_dir();
         log::init(!as_service, Some(shared::paths::log_dir().join("service.log")));
         info!("{} motoru {} başlıyor ({}).", shared::PRODUCT_NAME, shared::VERSION, if as_service { "hizmet" } else { "konsol" });
@@ -46,7 +48,9 @@ impl App {
         let exe_dir = shared::paths::exe_dir().unwrap_or_default();
         let (ctrl, rx) = Controller::new(exe_dir, as_service);
         ctrl.spawn_worker(rx);
-        if ctrl.config().auto_connect {
+        if !auto_connect {
+            info!("Arayüz hizmeti bir ayarı kaydetmek için başlattı; otomatik bağlanılmıyor.");
+        } else if ctrl.config().auto_connect {
             let _ = ctrl.connect();
         }
         updater::spawn_schedule(&ctrl);
@@ -67,13 +71,15 @@ impl App {
 
 define_windows_service!(ffi_service_main, service_main);
 
-fn service_main(_args: Vec<OsString>) {
-    if let Err(e) = run_service() {
+fn service_main(args: Vec<OsString>) {
+    // Hizmet yoneticisinin verdigi argumanlar (ilki hizmetin adi, sonra StartService'inkiler).
+    let auto_connect = !args.iter().any(|a| a.eq_ignore_ascii_case(shared::ipc::NO_AUTO_CONNECT_ARG));
+    if let Err(e) = run_service(auto_connect) {
         error!("Hizmet hatası: {e}");
     }
 }
 
-fn run_service() -> windows_service::Result<()> {
+fn run_service(auto_connect: bool) -> windows_service::Result<()> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let handler = move |event| match event {
         ServiceControl::Stop | ServiceControl::Shutdown | ServiceControl::Preshutdown => {
@@ -95,7 +101,7 @@ fn run_service() -> windows_service::Result<()> {
     };
 
     status.set_service_status(report(ServiceState::StartPending, ServiceControlAccept::empty(), Duration::from_secs(10)))?;
-    let app = App::start(true);
+    let app = App::start(true, auto_connect);
     status.set_service_status(report(
         ServiceState::Running,
         ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
@@ -122,7 +128,7 @@ fn run_console() {
     let _ = STOP.set(tx);
     unsafe { SetConsoleCtrlHandler(Some(on_ctrl), 1) };
 
-    let app = App::start(false);
+    let app = App::start(false, true);
     println!("Çalışıyor. Durdurmak için Ctrl+C.");
     let _ = rx.recv();
     app.stop();

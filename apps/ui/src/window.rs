@@ -30,6 +30,11 @@ const MIN_BUSY: Duration = Duration::from_millis(750);
 const MAX_PENDING: Duration = Duration::from_secs(6);
 /// Guncelleme kurulurken pencere bu kadar sonra kapanir (bildirim okunabilsin; servis 5 sn bekler).
 const UPDATE_CLOSE_DELAY: Duration = Duration::from_millis(1500);
+/// Hizmet kapaliyken degistirilen ayar: hizmet bu surede acilmazsa degisiklik geri alinir.
+const SERVICE_START_WAIT: Duration = Duration::from_secs(15);
+
+/// Hizmet kapaliyken yapilan ayar degisikligi; hizmet acilinca onun ayarina uygulanir.
+type PendingEdit = Box<dyn FnOnce(&mut AppConfig)>;
 
 struct Ctx {
     app: slint::Weak<AppWindow>,
@@ -52,6 +57,13 @@ struct Ctx {
     update_closing: Cell<bool>,
     /// Kullanici "simdi denetle" dedi: hata olursa bildirim gosterilir.
     update_requested: Cell<bool>,
+    /// Hizmet kapaliyken yapilan degisiklikler (sirayla). Her yeni grup bir sira numarasi alir;
+    /// suresi dolan zamanlayici yalnizca kendi grubunu atar.
+    pending_edits: RefCell<Vec<PendingEdit>>,
+    pending_batch: Cell<u32>,
+    /// Hizmetin veri klasoru: hizmet kapaliyken ayar buradan okunur. Testlerde gercek klasor
+    /// okunmaz (`GDPI3_DATA_DIR` verilmedikce).
+    saved_dir: RefCell<Option<std::path::PathBuf>>,
     /// GDPI3_TEST: gercek oturum acilisi kaydina, tepsiye ve v1 gocune dokunma.
     test_mode: bool,
 }
@@ -135,6 +147,11 @@ impl Ctx {
             update: RefCell::new(UpdateStatus::default()),
             update_closing: Cell::new(false),
             update_requested: Cell::new(false),
+            pending_edits: RefCell::new(Vec::new()),
+            pending_batch: Cell::new(0),
+            saved_dir: RefCell::new(
+                (!test_mode || std::env::var_os("GDPI3_DATA_DIR").is_some()).then(shared::paths::service_data_dir),
+            ),
             test_mode,
         }
     }
@@ -157,8 +174,13 @@ impl Ctx {
     }
 
     /// Ayari kopyalayip degistirir ve servise gonderir. Ekran, servisin onayladigi
-    /// yeni ayar olay olarak gelince guncellenir.
-    fn edit(&self, f: impl FnOnce(&mut AppConfig)) {
+    /// yeni ayar olay olarak gelince guncellenir. Hizmet kapaliysa degisiklik hemen ekranda
+    /// gorunur, hizmet (otomatik baglanmadan) baslatilir ve acilinca ona uygulanir.
+    fn edit<F: FnOnce(&mut AppConfig) + Clone + 'static>(&self, f: F) {
+        if !self.connected.get() {
+            self.edit_offline(f);
+            return;
+        }
         let (Some(mut cfg), Some(client)) = (self.config.borrow().clone(), self.client()) else {
             self.toast(&t!("Motor hizmetine bağlı değil.", "Not connected to the engine service."), true);
             return;
@@ -169,6 +191,52 @@ impl Ctx {
                 post_toast(message, true);
             }
         });
+    }
+
+    fn edit_offline<F: FnOnce(&mut AppConfig) + Clone + 'static>(&self, f: F) {
+        let mut cfg = self.config.borrow().clone().unwrap_or_else(|| AppConfig::default().sanitized());
+        f.clone()(&mut cfg);
+        self.apply_config(cfg);
+        let first = self.pending_edits.borrow().is_empty();
+        self.pending_edits.borrow_mut().push(Box::new(f));
+        if !first {
+            return;
+        }
+        let batch = self.pending_batch.get().wrapping_add(1);
+        self.pending_batch.set(batch);
+        // Testler gercek hizmete dokunmaz; baglanti sahte hizmetle (ya da elle) gelir.
+        let started = if self.test_mode { Ok(()) } else { start_service_for_settings() };
+        if let Err(e) = started {
+            self.drop_pending_edits(&e);
+            return;
+        }
+        Timer::single_shot(SERVICE_START_WAIT, move || {
+            with_ctx(|c| {
+                let waiting = c.pending_batch.get() == batch && !c.pending_edits.borrow().is_empty();
+                if waiting && !c.connected.get() {
+                    c.drop_pending_edits(&t!("Motor hizmeti başlamadı.", "The engine service didn't start."));
+                }
+            })
+        });
+    }
+
+    /// Hizmet acilmadi: bekleyen degisiklikler atilir, ekran kayitli ayara doner.
+    fn drop_pending_edits(&self, reason: &str) {
+        self.pending_edits.borrow_mut().clear();
+        self.show_saved_state();
+        self.toast(&t!("Ayar kaydedilemedi. {reason}", "Couldn't save the setting. {reason}"), true);
+    }
+
+    /// Hizmet kapali: ekranda hizmetin diske kaydettigi ayar ve ogrenilen siteler gorunur
+    /// (yoksa varsayilanlar degil, son bilinen hal kalir).
+    fn show_saved_state(&self) {
+        let Some(dir) = self.saved_dir.borrow().clone() else { return };
+        if let Some(cfg) = prefs::saved_config(&dir) {
+            self.apply_language(cfg.language);
+            self.apply_config(cfg);
+        }
+        *self.learned.borrow_mut() = prefs::saved_learned(&dir);
+        self.apply_learned();
     }
 
     fn save_prefs(&self) {
@@ -182,7 +250,10 @@ impl Ctx {
             Incoming::Connected(state) => self.apply_snapshot(*state),
             Incoming::Disconnected => {
                 self.connected.set(false);
-                *self.config.borrow_mut() = None;
+                // Bekleyen degisiklik varsa ekranda o kalir (hizmet acilinca uygulanacak).
+                if self.pending_edits.borrow().is_empty() {
+                    self.show_saved_state();
+                }
                 self.apply_engine();
             }
             Incoming::Event(ev) => match ev {
@@ -227,10 +298,32 @@ impl Ctx {
         if let Some(app) = self.ui() {
             app.global::<AppState>().set_version(s(state.service_version.as_str()));
         }
-        let fresh = state.config == AppConfig::default().sanitized();
         *self.update.borrow_mut() = state.update;
-        self.apply_language(state.config.language);
-        self.apply_config(state.config);
+        // Hizmet kapaliyken yapilan degisiklikler simdi onun ayarina uygulanir; ekran zaten
+        // yeni hali gosteriyordu, bu yuzden araya eski hal girmez.
+        let pending = std::mem::take(&mut *self.pending_edits.borrow_mut());
+        // v1 ayarlari yalnizca hic degistirilmemis ayarin yerine aktarilir.
+        let fresh = pending.is_empty() && state.config == AppConfig::default().sanitized();
+        let mut config = state.config;
+        if !pending.is_empty() {
+            for f in pending {
+                f(&mut config);
+            }
+            if let Some(client) = self.client() {
+                client.request(Request::SetConfig { config: Box::new(config.clone()) }, |r| {
+                    if let Response::Error { message } = r {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            with_ctx(|c| {
+                                c.toast(&message, true);
+                                c.resync_config();
+                            })
+                        });
+                    }
+                });
+            }
+        }
+        self.apply_language(config.language);
+        self.apply_config(config);
         self.apply_learned();
         self.apply_engine();
         self.apply_update();
@@ -761,7 +854,7 @@ impl Ctx {
         if exists {
             return t!("Zaten listede.", "Already in the list.");
         }
-        self.edit(|c| {
+        self.edit(move |c| {
             if excluded { c.scope.excluded.push(name) } else { c.scope.targets.push(name) }
         });
         String::new()
@@ -777,6 +870,16 @@ impl Ctx {
                         c.apply_learned();
                     })
                 });
+            }
+        });
+    }
+
+    /// Hizmetin reddettigi degisiklik ekranda kalmasin: gecerli ayar yeniden alinir.
+    fn resync_config(&self) {
+        let Some(client) = self.client() else { return };
+        client.request(Request::GetState, |r| {
+            if let Response::State { state } = r {
+                let _ = slint::invoke_from_event_loop(move || with_ctx(|c| c.apply_config(state.config)));
             }
         });
     }
@@ -973,6 +1076,9 @@ pub fn run(show_event: ShowEvent) -> Result<(), slint::PlatformError> {
     ctx.apply_language(language);
     app.global::<Motion>().set_enabled(winsys::animations_enabled());
     ctx.apply_prefs();
+    // Hizmete baglanmadan once (ve hizmet kapaliysa hep) ekranda kayitli ayar gorunur;
+    // varsayilanlar degil.
+    ctx.show_saved_state();
     ctx.apply_engine();
     app.global::<AppState>().set_version(s(shared::VERSION));
     #[cfg(target_os = "macos")]
@@ -1167,6 +1273,15 @@ pub fn system_theme_changed() {
     with_ctx(|c| c.apply_prefs());
 }
 
+/// Ayar degisikligi icin hizmeti baslatir. Windows'ta "acilista otomatik baglan" bu kez
+/// uygulanmaz: ayar degistirmek baglanti acmamali. Mac ve Android'de motor uygulamanin icindedir.
+fn start_service_for_settings() -> Result<(), String> {
+    #[cfg(windows)]
+    return winsys::start_service_without_connecting();
+    #[cfg(not(windows))]
+    return winsys::start_service();
+}
+
 #[cfg(windows)]
 fn spawn_tray() {
     if let Ok(exe) = std::env::current_exe() {
@@ -1221,7 +1336,7 @@ fn bind_callbacks(app: &AppWindow) {
         with_ctx(|c| {
             let Some(isp) = presets::ISPS.get(i as usize) else { return };
             let rec = isp.recommended();
-            c.edit(|cfg| {
+            c.edit(move |cfg| {
                 cfg.isp = isp.id.into();
                 cfg.method = rec.id.into();
             });
@@ -1234,12 +1349,12 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_select_method(|i| {
         with_ctx(|c| {
             let Some(id) = c.method_ids.borrow().get(i as usize).cloned() else { return };
-            c.edit(|cfg| set_method(cfg, id));
+            c.edit(move |cfg| set_method(cfg, id));
         })
     });
     st.on_set_dns_mode(|i| {
         with_ctx(|c| {
-            c.edit(|cfg| {
+            c.edit(move |cfg| {
                 cfg.dns.mode = match i {
                     0 => DnsMode::Off,
                     2 => DnsMode::Redirect,
@@ -1255,11 +1370,11 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_select_dns(|i| {
         with_ctx(|c| {
             let Some(id) = c.dns_ids.borrow().get(i as usize).cloned() else { return };
-            c.edit(|cfg| cfg.dns.provider = id);
+            c.edit(move |cfg| cfg.dns.provider = id);
         })
     });
-    st.on_set_dns_fallback(|v| with_ctx(|c| c.edit(|cfg| cfg.dns.fallback_to_system = v)));
-    st.on_set_dns_skip_vpn(|v| with_ctx(|c| c.edit(|cfg| cfg.dns.skip_on_vpn = v)));
+    st.on_set_dns_fallback(|v| with_ctx(|c| c.edit(move |cfg| cfg.dns.fallback_to_system = v)));
+    st.on_set_dns_skip_vpn(|v| with_ctx(|c| c.edit(move |cfg| cfg.dns.skip_on_vpn = v)));
     st.on_add_custom_dns(|name, addr, boot| {
         let mut out = String::new();
         with_ctx(|c| out = c.add_custom_dns(&name, &addr, &boot));
@@ -1268,7 +1383,7 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_remove_custom_dns(|id| {
         let id = id.to_string();
         with_ctx(|c| {
-            c.edit(|cfg| {
+            c.edit(move |cfg| {
                 cfg.dns.custom.retain(|d| d.id != id);
                 if cfg.dns.provider == id {
                     cfg.dns.provider = if cfg.dns.mode == DnsMode::Redirect { "yandex".into() } else { "cloudflare".into() };
@@ -1281,7 +1396,7 @@ fn bind_callbacks(app: &AppWindow) {
     st.on_use_bench(|id| {
         let id = id.to_string();
         with_ctx(|c| {
-            c.edit(|cfg| {
+            c.edit(move |cfg| {
                 cfg.dns.mode = DnsMode::Encrypted;
                 cfg.dns.provider = id;
             });
@@ -1289,13 +1404,13 @@ fn bind_callbacks(app: &AppWindow) {
         })
     });
     st.on_set_scope_mode(|i| {
-        with_ctx(|c| c.edit(|cfg| cfg.scope.mode = if i == 1 { engine::ScopeMode::All } else { engine::ScopeMode::Smart }))
+        with_ctx(|c| c.edit(move |cfg| cfg.scope.mode = if i == 1 { engine::ScopeMode::All } else { engine::ScopeMode::Smart }))
     });
-    st.on_set_learning(|v| with_ctx(|c| c.edit(|cfg| cfg.scope.learning = v)));
+    st.on_set_learning(|v| with_ctx(|c| c.edit(move |cfg| cfg.scope.learning = v)));
     st.on_toggle_category(|id, on| {
         let id = id.to_string();
         with_ctx(|c| {
-            c.edit(|cfg| {
+            c.edit(move |cfg| {
                 cfg.scope.categories.retain(|x| !x.eq_ignore_ascii_case(&id));
                 if on {
                     cfg.scope.categories.push(id);
@@ -1310,7 +1425,7 @@ fn bind_callbacks(app: &AppWindow) {
     });
     st.on_remove_target(|h| {
         let h = h.to_string();
-        with_ctx(|c| c.edit(|cfg| cfg.scope.targets.retain(|x| x != &h)))
+        with_ctx(|c| c.edit(move |cfg| cfg.scope.targets.retain(|x| x != &h)))
     });
     st.on_add_excluded(|h| {
         let mut out = String::new();
@@ -1319,7 +1434,7 @@ fn bind_callbacks(app: &AppWindow) {
     });
     st.on_remove_excluded(|h| {
         let h = h.to_string();
-        with_ctx(|c| c.edit(|cfg| cfg.scope.excluded.retain(|x| x != &h)))
+        with_ctx(|c| c.edit(move |cfg| cfg.scope.excluded.retain(|x| x != &h)))
     });
     st.on_forget_learned(|h| {
         let host = h.to_string();
@@ -1338,8 +1453,8 @@ fn bind_callbacks(app: &AppWindow) {
             c.refresh_state();
         })
     });
-    st.on_set_start_with_windows(|v| with_ctx(|c| c.edit(|cfg| cfg.start_with_windows = v)));
-    st.on_set_auto_update(|v| with_ctx(|c| c.edit(|cfg| cfg.updates = if v { UpdateMode::Auto } else { UpdateMode::Notify })));
+    st.on_set_start_with_windows(|v| with_ctx(|c| c.edit(move |cfg| cfg.start_with_windows = v)));
+    st.on_set_auto_update(|v| with_ctx(|c| c.edit(move |cfg| cfg.updates = if v { UpdateMode::Auto } else { UpdateMode::Notify })));
     st.on_check_update(|| {
         with_ctx(|c| {
             let Some(client) = c.client() else {
@@ -1351,7 +1466,7 @@ fn bind_callbacks(app: &AppWindow) {
         })
     });
     st.on_install_update(|| with_ctx(|c| c.install_update()));
-    st.on_set_auto_connect(|v| with_ctx(|c| c.edit(|cfg| cfg.auto_connect = v)));
+    st.on_set_auto_connect(|v| with_ctx(|c| c.edit(move |cfg| cfg.auto_connect = v)));
     st.on_set_tray_at_login(|v| {
         with_ctx(|c| {
             c.prefs.borrow_mut().tray_at_login = v;
@@ -1384,7 +1499,7 @@ fn bind_callbacks(app: &AppWindow) {
         };
         with_ctx(|c| {
             c.apply_language(language);
-            c.edit(|cfg| cfg.language = language);
+            c.edit(move |cfg| cfg.language = language);
         })
     });
     st.on_open_url(|url| {
@@ -1486,6 +1601,130 @@ mod tests {
         assert_eq!(d.kind, CustomDnsKind::Doh);
         assert!(parse_custom_dns("x", "https://dns.nextdns.io/abc", "").unwrap_err().contains("IP"));
         assert!(parse_custom_dns("x", "dns.google", "").is_err());
+    }
+
+    /// Gecici veri klasoru: hizmetin diske kaydettigi ayar ve ogrenilen siteler.
+    fn saved_dir(name: &str, cfg: &AppConfig, learned: &[LearnedHost]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("gdpi3-saved-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), serde_json::to_vec_pretty(cfg).unwrap()).unwrap();
+        std::fs::write(dir.join("learned.json"), serde_json::to_vec_pretty(learned).unwrap()).unwrap();
+        dir
+    }
+
+    /// Kullanicinin degistirdigi ayar: varsayilanlardan farkli (Slint'in baslangic degerleri
+    /// varsayilanlarla ayni oldugu icin fark ekranda gorunur).
+    fn user_settings() -> AppConfig {
+        let mut cfg = AppConfig::default().sanitized();
+        cfg.start_with_windows = false;
+        cfg.auto_connect = false;
+        let isp = &presets::ISPS[1];
+        cfg.isp = isp.id.into();
+        cfg.method = isp.recommended().id.into();
+        cfg
+    }
+
+    fn snapshot(config: AppConfig) -> Box<StateSnapshot> {
+        Box::new(StateSnapshot {
+            service_version: shared::VERSION.into(),
+            engine: EngineStatus::default(),
+            config,
+            learned: Vec::new(),
+            conflicts: Vec::new(),
+            update: UpdateStatus::default(),
+        })
+    }
+
+    /// Pencere baglami ve ayar ekranina bagli geri cagrilar (tiklamalar `edit`e ulasir).
+    fn wired(h: &crate::uitest::Harness, dir: std::path::PathBuf) -> Rc<Ctx> {
+        let ctx = Rc::new(Ctx::new(&h.app, Prefs::default(), true));
+        *ctx.saved_dir.borrow_mut() = Some(dir);
+        CTX.with(|c| *c.borrow_mut() = Some(ctx.clone()));
+        bind_callbacks(&h.app);
+        ctx
+    }
+
+    /// Hizmet kapaliyken (orn. "Windows ile baslat" kapali, bilgisayar yeni acildi) ekran
+    /// varsayilanlari degil, hizmetin kaydettigi ayari gosterir.
+    #[test]
+    fn offline_window_shows_saved_settings() {
+        let h = crate::uitest::Harness::new(1.0);
+        let ctx = Ctx::new(&h.app, Prefs::default(), true);
+        let cfg = user_settings();
+        let learned = vec![LearnedHost { host: "ornek.com".into(), reason: "yanıtsız kaldı".into(), at_ms: 1 }];
+        *ctx.saved_dir.borrow_mut() = Some(saved_dir("show", &cfg, &learned));
+        let st = h.app.global::<AppState>();
+        assert!(st.get_start_with_windows() && st.get_auto_connect(), "baslangicta varsayilanlar");
+
+        ctx.on_incoming(Incoming::Disconnected);
+        assert!(st.get_service_missing());
+        assert!(!st.get_start_with_windows(), "kayitli ayar: Windows ile baslat kapali");
+        assert!(!st.get_auto_connect());
+        assert_eq!(st.get_isp_index(), 1);
+        assert_eq!(st.get_method_name(), method_name(&cfg).as_str());
+        assert_eq!(st.get_learned().row_count(), 1);
+
+        // Dosya hic yoksa hizmet de varsayilanlarla calisir; ekran da onlari gosterir.
+        let empty = std::env::temp_dir().join(format!("gdpi3-saved-{}-none", std::process::id()));
+        *ctx.saved_dir.borrow_mut() = Some(empty);
+        ctx.on_incoming(Incoming::Disconnected);
+        assert!(st.get_start_with_windows() && st.get_auto_connect());
+        let _ = std::fs::remove_dir_all(saved_dir("show", &cfg, &[]));
+    }
+
+    /// Hizmet kapaliyken anahtar hemen yeni degerini gosterir; hizmet acilinca degisiklik onun
+    /// (bu arada degismis olabilecek) ayarina uygulanir, hizmetin diger ayarlari korunur.
+    #[test]
+    fn offline_edit_shows_at_once_and_reaches_the_service() {
+        let mut h = crate::uitest::Harness::new(1.0);
+        let cfg = user_settings();
+        let ctx = wired(&h, saved_dir("edit", &cfg, &[]));
+        ctx.on_incoming(Incoming::Disconnected);
+        h.app.set_depth(2);
+        h.app.set_sub(4);
+        h.advance(500);
+        assert!(!h.state().get_start_with_windows());
+
+        h.click(200.0, 110.0);
+        h.advance(300);
+        assert!(h.state().get_start_with_windows(), "degisiklik beklemeden gorunmeli");
+        assert_eq!(ctx.pending_edits.borrow().len(), 1);
+        assert!(!h.state().get_toast_error(), "bagli degil hatasi gosterilmemeli");
+
+        // Hizmet ayarin bir baska alanini da tutuyor (otomatik guncelleme kapali).
+        let mut service_cfg = cfg.clone();
+        service_cfg.updates = UpdateMode::Notify;
+        ctx.on_incoming(Incoming::Connected(snapshot(service_cfg)));
+        let shown = ctx.config.borrow().clone().unwrap();
+        assert!(shown.start_with_windows, "bekleyen degisiklik uygulanmali");
+        assert_eq!(shown.updates, UpdateMode::Notify, "hizmetin ayari korunmali");
+        assert!(ctx.pending_edits.borrow().is_empty());
+        assert!(h.state().get_start_with_windows());
+        assert!(!h.state().get_auto_update());
+        assert!(!h.state().get_service_missing());
+        CTX.with(|c| *c.borrow_mut() = None);
+        let _ = std::fs::remove_dir_all(saved_dir("edit", &cfg, &[]));
+    }
+
+    /// Hizmet belirli surede acilmazsa degisiklik atilir, ekran kayitli ayara doner.
+    #[test]
+    fn offline_edit_is_undone_if_the_service_never_starts() {
+        let mut h = crate::uitest::Harness::new(1.0);
+        let ctx = wired(&h, saved_dir("timeout", &user_settings(), &[]));
+        ctx.on_incoming(Incoming::Disconnected);
+        h.app.set_depth(2);
+        h.app.set_sub(4);
+        h.advance(500);
+        h.click(200.0, 110.0);
+        h.advance(300);
+        assert!(h.state().get_start_with_windows());
+
+        h.advance(SERVICE_START_WAIT.as_millis() as u64);
+        assert!(ctx.pending_edits.borrow().is_empty());
+        assert!(!h.state().get_start_with_windows(), "kayitli ayara donmeli");
+        assert!(h.state().get_toast_error());
+        CTX.with(|c| *c.borrow_mut() = None);
+        let _ = std::fs::remove_dir_all(saved_dir("timeout", &user_settings(), &[]));
     }
 
     /// Dokununca tarama en az MIN_BUSY gorunur; hic yanit gelmezse MAX_PENDING sonra gercek durum.
